@@ -1,0 +1,18 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "FengShuiAI FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic-settings>=2.7.0",
+    "python-multipart>=0.0.20",
+    "pillow>=10.4.0",
+    "opencv-python-headless>=4.10.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
