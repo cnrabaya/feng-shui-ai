@@ -6,10 +6,9 @@ dist/
 wheels/
 *.egg-info
 
-*node_modules/
-
 # Virtual environments
 .venv
+venv/
 
 # Agent files
 .opencode/
@@ -17,3 +16,10 @@ wheels/
 AGENTS.md
 PLAN.md
 PLAN_TASKS.md
+
+# VS Code
+.vscode/
+
+# Node
+node_modules/
+
