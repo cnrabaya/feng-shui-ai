@@ -1,6 +1,14 @@
 from fastapi import APIRouter
 
+from app.routes.evaluate import router as evaluate_router
+from app.routes.suggest import router as suggest_router
+from app.routes.elements import router as elements_router
+
 router = APIRouter(prefix="/v1")
+
+router.include_router(evaluate_router)
+router.include_router(suggest_router)
+router.include_router(elements_router)
 
 
 @router.get("/health")
