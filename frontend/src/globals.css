@@ -1,0 +1,17 @@
+/* globals.css — Import this in main.jsx */
+@import './tokens.css';
+
+#root {
+  min-height: 100vh;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+/* Smooth transitions for interactive elements */
+button, input, select, textarea {
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
