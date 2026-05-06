@@ -11,9 +11,9 @@ wheels/
 # Virtual environments
 .venv
 
+# env
+.env
+
 # Agent files
 .opencode/
 *skills/
-AGENTS.md
-PLAN.md
-PLAN_TASKS.md
