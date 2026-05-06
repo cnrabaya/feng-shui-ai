@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 
 
 class Dimensions(BaseModel):
@@ -59,8 +59,21 @@ class ExtractionResult(BaseModel):
     architectural_features: ArchitecturalFeatures
 
 
-class EvaluateRequest(BaseModel):
+class MultiImageData(BaseModel):
     image: str = Field(description="Base64-encoded image")
+    direction: Literal["north", "south", "east", "west", "not_sure"] = "not_sure"
+
+
+class MergedRoom(BaseModel):
+    confirmed_elements: list[DetectedElement]
+    unconfirmed_elements: list[DetectedElement]
+    spatial_conflicts: list[dict] = Field(default_factory=list)
+    architectural_features: ArchitecturalFeatures = Field(default_factory=ArchitecturalFeatures)
+
+
+class EvaluateRequest(BaseModel):
+    image: Optional[str] = Field(default=None, description="Base64-encoded single image")
+    images: Optional[list[MultiImageData]] = Field(default=None, description="Multiple images with direction metadata")
     dimensions: Optional[Dimensions] = None
     session_id: Optional[str] = None
 

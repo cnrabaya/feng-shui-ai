@@ -1,6 +1,10 @@
 from fastapi import APIRouter
 
+from app.core.logger import get_logger, redact_session_id
 from app.models.schemas import AddElementRequest, AddElementResponse, Score, ScoreBreakdown, Issue
+from app.services.session import append_elements
+
+logger = get_logger("elements")
 
 router = APIRouter(tags=["elements"])
 
@@ -28,6 +32,9 @@ MOCK_UPDATED_SCORE = Score(
 
 @router.post("/add-element", response_model=AddElementResponse)
 async def add_element(request: AddElementRequest) -> AddElementResponse:
+    element_type = request.element.get("type", "unknown")
+    logger.info(f"Add element: session={redact_session_id(request.session_id)}, element_type={element_type}")
+    append_elements(request.session_id, [request.element])
     return AddElementResponse(
         updated_score=MOCK_UPDATED_SCORE,
         delta=7,
