@@ -1,32 +1,89 @@
-from app.models.schemas import ExtractionResult, DetectedElement, MergedRoom
+from typing import Optional
+from app.models.schemas import ExtractionResult, DetectedElement, MergedRoom, Dimensions
 
-_session_store: dict[str, ExtractionResult | MergedRoom] = {}
-
-
-def store_extraction_result(session_id: str, result: ExtractionResult) -> None:
-    _session_store[session_id] = result
+_SessionData = dict  # alias for clarity
 
 
-def get_extraction_result(session_id: str) -> ExtractionResult | None:
+_session_store: dict[str, _SessionData] = {}
+
+
+def store_extraction_result(
+    session_id: str,
+    result: ExtractionResult,
+    school: str = "black_hat",
+    dimensions: Optional[Dimensions] = None,
+) -> None:
+    _session_store[session_id] = {
+        "result": result,
+        "school": school,
+        "dimensions": dimensions,
+        "elements": [
+            {
+                "id": e.id,
+                "type": e.type,
+                "position": e.position_relative_to_camera,
+                "orientation": None,
+                "confidence": e.confidence,
+            }
+            for e in result.elements
+        ],
+    }
+
+
+def store_merged_result(
+    session_id: str,
+    result: MergedRoom,
+    school: str = "black_hat",
+    dimensions: Optional[Dimensions] = None,
+) -> None:
+    _session_store[session_id] = {
+        "result": result,
+        "school": school,
+        "dimensions": dimensions,
+        "elements": [
+            {
+                "id": e.id,
+                "type": e.type,
+                "position": e.position_relative_to_camera,
+                "orientation": None,
+                "confidence": e.confidence,
+            }
+            for e in result.confirmed_elements + result.unconfirmed_elements
+        ],
+    }
+
+
+def get_extraction_result(session_id: str) -> Optional[ExtractionResult]:
     stored = _session_store.get(session_id)
     if stored is None:
         return None
-    if isinstance(stored, MergedRoom):
+    result = stored.get("result")
+    if isinstance(result, MergedRoom):
         return None
-    return stored
+    return result
 
 
-def store_merged_result(session_id: str, result: MergedRoom) -> None:
-    _session_store[session_id] = result
-
-
-def get_merged_result(session_id: str) -> MergedRoom | None:
+def get_merged_result(session_id: str) -> Optional[MergedRoom]:
     stored = _session_store.get(session_id)
     if stored is None:
         return None
-    if isinstance(stored, ExtractionResult):
+    result = stored.get("result")
+    if isinstance(result, ExtractionResult):
         return None
-    return stored
+    return result
+
+
+def get_stored_elements_and_school(session_id: str) -> Optional[tuple[list[dict], str]]:
+    """Returns (elements_list, school) or None if session not found."""
+    stored = _session_store.get(session_id)
+    if stored is None:
+        return None
+    return stored.get("elements", []), stored.get("school", "black_hat")
+
+
+def get_stored_session_data(session_id: str) -> Optional[_SessionData]:
+    """Returns full session data including elements, school, dimensions."""
+    return _session_store.get(session_id)
 
 
 def append_elements(session_id: str, new_elements: list[dict]) -> MergedRoom:
@@ -34,18 +91,30 @@ def append_elements(session_id: str, new_elements: list[dict]) -> MergedRoom:
     if stored is None:
         raise ValueError(f"Session {session_id} not found")
 
-    if isinstance(stored, ExtractionResult):
+    result = stored.get("result")
+    if isinstance(result, ExtractionResult):
         merged = MergedRoom(
-            confirmed_elements=stored.elements,
+            confirmed_elements=result.elements,
             unconfirmed_elements=[],
-            architectural_features=stored.architectural_features,
+            architectural_features=result.architectural_features,
         )
-        _session_store[session_id] = merged
-        stored = merged
+        stored["result"] = merged
+        result = merged
 
     for elem_data in new_elements:
         elem = DetectedElement(**elem_data)
         elem.confidence = "user_added"
-        stored.confirmed_elements.append(elem)
+        result.confirmed_elements.append(elem)
 
-    return stored
+    stored["elements"] = [
+        {
+            "id": e.id,
+            "type": e.type,
+            "position": e.position_relative_to_camera,
+            "orientation": None,
+            "confidence": e.confidence,
+        }
+        for e in result.confirmed_elements + result.unconfirmed_elements
+    ]
+
+    return result
