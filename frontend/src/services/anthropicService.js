@@ -38,7 +38,7 @@ async function callClaude(messages, systemPrompt) {
 // Takes an image (base64) + dimensions, returns:
 //   { description, fengShuiScore, elements, layouts }
 // ─────────────────────────────────────────────
-export async function analyzeRoom({ imageBase64, imageMediaType = 'image/jpeg', width, height, unit = 'm' }) {
+export async function analyzeRoom({ imageBase64, imageMediaType = 'image/jpeg', width, height, unit = 'm', orientation = null }) {
   const systemPrompt = `You are an expert interior designer and certified Feng Shui consultant.
 You analyze room photos and return structured JSON analysis.
 Always respond ONLY with a valid JSON object — no markdown, no explanation, no backticks.
@@ -73,7 +73,8 @@ The JSON must match this exact schema:
     },
     {
       type: 'text',
-      text: `Analyze this room. Dimensions: ${width} × ${height} ${unit}. 
+      text: `Analyze this room. Dimensions: ${width} × ${height} ${unit}.
+${orientation ? `Camera orientation: the photographer was facing ${orientation}. This means the wall at the back of the photo faces ${orientation}, and the wall directly behind the photographer faces the opposite direction. Use this to determine which walls face which cardinal directions for bagua mapping.` : ''}
 Map furniture positions to a grid where the room fits in a ${Math.round(width * 5)} × ${Math.round(height * 5)} grid unit space.
 Respond only with the JSON object.`,
     },
@@ -88,7 +89,7 @@ Respond only with the JSON object.`,
 // generateLayouts
 // Takes room analysis + dimensions, returns 3 layout alternatives
 // ─────────────────────────────────────────────
-export async function generateLayouts({ analysis, width, height, unit = 'm' }) {
+export async function generateLayouts({ analysis, width, height, unit = 'm', orientation = null }) {
   const systemPrompt = `You are a Feng Shui interior design expert.
 Generate optimized room layout alternatives as JSON only — no markdown, no explanation.
 Respond ONLY with a valid JSON object matching this schema:
@@ -110,6 +111,7 @@ Respond ONLY with a valid JSON object matching this schema:
 }`;
 
   const userText = `Room: ${width} × ${height} ${unit}.
+${orientation ? `Camera was facing ${orientation} — use this for directional furniture placement recommendations.` : ''}
 Grid: ${Math.round(width * 5)} × ${Math.round(height * 5)} units.
 Current analysis: ${JSON.stringify(analysis, null, 2)}
 

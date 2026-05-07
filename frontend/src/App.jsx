@@ -2,8 +2,12 @@
 // App.jsx — Root component + step router
 // Feng Shui Room Analyzer
 // ─────────────────────────────────────────────
+// USE_MOCK: set true to preview full UI without API. Flip to false when API is ready.
+const USE_MOCK = true;
+
 import React, { useState, useEffect } from 'react';
 import './styles/tokens.css';
+import { MOCK_ANALYSIS, MOCK_LAYOUTS } from './constants/mockData';
 
 import StepIndicator  from './components/ui/StepIndicator';
 import LoadingState   from './components/ui/LoadingState';
@@ -12,6 +16,7 @@ import Card           from './components/ui/Card';
 
 import ImageUploader  from './components/upload/ImageUploader';
 import DimensionsInput from './components/upload/DimensionsInput';
+import OrientationPicker from './components/upload/OrientationPicker';
 
 import AnalysisPanel  from './components/analysis/AnalysisPanel';
 import LayoutAlternatives from './components/layout/LayoutAlternatives';
@@ -28,6 +33,7 @@ export default function App() {
   // ── Image + dimensions state ──
   const [image, setImage]       = useState(null); // { base64, mediaType }
   const [dims, setDims]         = useState({ width: 0, height: 0, unit: 'm' });
+  const [orientation, setOrientation] = useState(null); // compass direction string e.g. 'N', 'SW'
   const [currentStep, setStep]  = useState(STEP.UPLOAD);
 
   // ── AI analysis hook ──
@@ -56,6 +62,11 @@ export default function App() {
   const handleImageReady = ({ base64, mediaType }) => setImage({ base64, mediaType });
 
   const handleAnalyze = () => {
+    if (USE_MOCK) {
+      // Simulate loading delay then inject mock data
+      analysis.setMockData(MOCK_ANALYSIS, MOCK_LAYOUTS);
+      return;
+    }
     if (!image || !dims.width || !dims.height) return;
     analysis.runAnalysis({
       imageBase64:   image.base64,
@@ -63,10 +74,11 @@ export default function App() {
       width:  dims.width,
       height: dims.height,
       unit:   dims.unit,
+      orientation,
     });
   };
 
-  const canAnalyze = image && dims.width > 0 && dims.height > 0 && !analysis.isLoading;
+  const canAnalyze = (USE_MOCK || image) && (USE_MOCK || dims.width > 0) && (USE_MOCK || dims.height > 0) && !analysis.isLoading;
 
   // ── Derived: which step number to show in indicator ──
   const indicatorStep = currentStep;
@@ -89,7 +101,7 @@ export default function App() {
         </div>
         <StepIndicator currentStep={indicatorStep}/>
         {currentStep > STEP.UPLOAD && (
-          <Button variant="ghost" size="sm" onClick={()=>{ analysis.reset(); setStep(STEP.UPLOAD); setImage(null); }}>
+          <Button variant="ghost" size="sm" onClick={()=>{ analysis.reset(); setStep(STEP.UPLOAD); setImage(null); setOrientation(null); }}>
             ← New Analysis
           </Button>
         )}
@@ -116,6 +128,10 @@ export default function App() {
             <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-6)' }}>
               <Card>
                 <DimensionsInput {...dims} onChange={setDims}/>
+              </Card>
+              <Card>
+                <p style={{ color:'var(--text-muted)', fontSize:'var(--text-xs)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'var(--space-4)' }}>Photo Orientation</p>
+                <OrientationPicker value={orientation} onChange={setOrientation}/>
               </Card>
               <Button variant="primary" size="lg" fullWidth disabled={!canAnalyze} onClick={handleAnalyze}>
                 Analyze Room →
