@@ -49,8 +49,8 @@ class DetectedElement(BaseModel):
 
 
 class ArchitecturalFeatures(BaseModel):
-    doors: list[dict] = []
-    windows: list[dict] = []
+    doors: list[str] = []
+    windows: list[str] = []
     visible_walls: list[str] = []
 
 

@@ -9,7 +9,7 @@ from app.models.schemas import ExtractionResult, DetectedElement, ArchitecturalF
 def make_mock_extraction(type_: str = "sofa") -> ExtractionResult:
     return ExtractionResult(
         elements=[DetectedElement(id=f"{type_}_1", type=type_, position_relative_to_camera="center", confidence="high")],
-        architectural_features=ArchitecturalFeatures(doors=[{"location": "north"}], windows=[{"location": "east", "count": 1}], visible_walls=["north", "east"]),
+        architectural_features=ArchitecturalFeatures(doors=["north"], windows=["east"], visible_walls=["north", "east"]),
     )
 
 
@@ -17,7 +17,7 @@ def make_mock_merged_with_elements(elements: list[DetectedElement]) -> MergedRoo
     return MergedRoom(
         confirmed_elements=elements,
         unconfirmed_elements=[],
-        architectural_features=ArchitecturalFeatures(doors=[{"location": "north"}], windows=[{"location": "east", "count": 1}], visible_walls=["north", "east"]),
+        architectural_features=ArchitecturalFeatures(doors=["north"], windows=["east"], visible_walls=["north", "east"]),
         spatial_conflicts=[],
     )
 

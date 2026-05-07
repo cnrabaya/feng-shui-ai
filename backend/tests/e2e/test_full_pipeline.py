@@ -5,6 +5,7 @@ import pytest
 from PIL import Image
 
 from app.models.schemas import MultiImageData
+from app.services.image_processor import process_image_base64
 
 pytestmark = pytest.mark.e2e
 
@@ -34,8 +35,6 @@ class TestVisionServiceE2E:
     @pytest.mark.asyncio
     @pytest.mark.timeout(60)
     async def test_batch_two_images(self, real_vision_service, room_1_base64, room_2_base64):
-        from app.services.image_processor import process_image_base64
-
         images = [
             MultiImageData(image=process_image_base64(room_1_base64), direction="north"),
             MultiImageData(image=process_image_base64(room_2_base64), direction="south"),
@@ -52,8 +51,6 @@ class TestMergeServiceE2E:
     @pytest.mark.asyncio
     @pytest.mark.timeout(60)
     async def test_merge_two_real_extractions(self, real_vision_service, real_merge_service, room_1_base64, room_2_base64):
-        from app.services.image_processor import process_image_base64
-
         extractions = await real_vision_service.extract_elements_batch([
             MultiImageData(image=process_image_base64(room_1_base64), direction="north"),
             MultiImageData(image=process_image_base64(room_2_base64), direction="south"),

@@ -30,8 +30,8 @@ ELEMENT_NAMING_SCHEME = load_prompt("ElementNamingScheme.md")
 class VisionService:
     def __init__(self):
         self.client = AsyncOpenAI(
-            api_key=settings.qwen_vl_api_key,
-            base_url=settings.vllm_base_url.rsplit("/v1", 1)[0] if "/v1" in settings.vllm_base_url else settings.vllm_base_url,
+            api_key=settings.api_key,
+            base_url=settings.vllm_base_url,
         )
         self.model = settings.model_name
 
@@ -73,28 +73,30 @@ class VisionService:
                 logger.warning(f"Qwen-VL call failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}, retrying...")
                 await asyncio.sleep(2 ** attempt)
 
-    async def extract_elements(self, image_base64: str, direction: str | None = None) -> ExtractionResult:
+    async def extract_elements(self, image_base64: str, direction: str | None = None, return_raw: bool = False) -> ExtractionResult | tuple[ExtractionResult, str]:
         prompt = self._format_element_prompt(direction)
         logger.info(f"Extracting elements (direction={direction or 'unknown'}, image={redact_image(image_base64[:100])})")
         raw = await self._call_qwen(image_base64, prompt)
         result = self._parse_extraction(raw)
         logger.info(f"Extraction complete: {len(result.elements)} elements, {len(result.architectural_features.doors)} doors, {len(result.architectural_features.windows)} windows")
+        if return_raw:
+            return result, raw
         return result
 
     async def extract_elements_batch(
-        self, images: list[MultiImageData], max_concurrency: int = 3
-    ) -> list[ExtractionResult]:
+        self, images: list[MultiImageData], max_concurrency: int = 3, return_raw: bool = False
+    ) -> list[ExtractionResult | tuple[ExtractionResult, str]]:
         logger.info(f"Batch extraction: {len(images)} image(s), max_concurrency={max_concurrency}")
         semaphore = asyncio.Semaphore(max_concurrency)
 
-        async def extract_one(img_data: MultiImageData) -> ExtractionResult:
+        async def extract_one(img_data: MultiImageData) -> ExtractionResult | tuple[ExtractionResult, str]:
             async with semaphore:
-                result = await self.extract_elements(img_data.image, img_data.direction)
+                result = await self.extract_elements(img_data.image, img_data.direction, return_raw=return_raw)
                 return result
 
         tasks = [extract_one(img) for img in images]
         results = await asyncio.gather(*tasks)
-        total_elements = sum(len(r.elements) for r in results)
+        total_elements = sum(len(r[0].elements) if isinstance(r, tuple) else len(r.elements) for r in results)
         logger.info(f"Batch extraction complete: {len(results)} photos, {total_elements} total elements")
         return results
 
@@ -114,11 +116,20 @@ class VisionService:
 
         elements = [DetectedElement(**e) for e in data.get("elements", [])]
         arch_data = data.get("architectural_features", {})
+
+        def _normalize_ids(items: list) -> list[str]:
+            return [
+                item["id"] if isinstance(item, dict) and "id" in item
+                else item.get("location", str(item)) if isinstance(item, dict)
+                else item
+                for item in items
+            ]
+
         return ExtractionResult(
             elements=elements,
             architectural_features=ArchitecturalFeatures(
-                doors=arch_data.get("doors", []),
-                windows=arch_data.get("windows", []),
+                doors=_normalize_ids(arch_data.get("doors", [])),
+                windows=_normalize_ids(arch_data.get("windows", [])),
                 visible_walls=arch_data.get("visible_walls", []),
             ),
         )
