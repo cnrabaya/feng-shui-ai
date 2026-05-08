@@ -12,11 +12,13 @@ def store_extraction_result(
     result: ExtractionResult,
     school: str = "black_hat",
     dimensions: Optional[Dimensions] = None,
+    grid_size: Optional[str] = None,
 ) -> None:
     _session_store[session_id] = {
         "result": result,
         "school": school,
         "dimensions": dimensions,
+        "grid_size": grid_size,
         "elements": [
             {
                 "id": e.id,
@@ -35,11 +37,13 @@ def store_merged_result(
     result: MergedRoom,
     school: str = "black_hat",
     dimensions: Optional[Dimensions] = None,
+    grid_size: Optional[str] = None,
 ) -> None:
     _session_store[session_id] = {
         "result": result,
         "school": school,
         "dimensions": dimensions,
+        "grid_size": grid_size,
         "elements": [
             {
                 "id": e.id,

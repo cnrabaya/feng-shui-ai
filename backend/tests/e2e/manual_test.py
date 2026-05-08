@@ -3,29 +3,35 @@ Manual E2E test script for the FengShuiAI pipeline.
 
 Supports individual steps (vision, merge, layout, score) and the full pipeline.
 
+Auto-loads config.toml from the same directory as this script.
+Use --config to specify a different config file.
+
 Usage:
-    # Full pipeline (vision -> merge -> layout -> score) on a single image
+    # Full pipeline from config (auto-loads config.toml)
+    uv run python tests/e2e/manual_test.py
+
+    # Full pipeline with config override
+    uv run python tests/e2e/manual_test.py --config path/to/my_config.toml
+
+    # Full pipeline on a single image (CLI overrides config)
     uv run python tests/e2e/manual_test.py evaluate path/to/room.png
 
-    # Full pipeline with multiple photos
-    uv run python tests/e2e/manual_test.py evaluate path/to/room1.png path/to/room2.png --dimensions 4.5x3.5
+    # Full pipeline with multiple photos + dimensions (CLI overrides config)
+    uv run python tests/e2e/manual_test.py evaluate path/to/room1.png path/to/room2.png --dimensions 4.5x3.5 --grid-size 3x3
 
     # Vision extraction only (single image)
     uv run python tests/e2e/manual_test.py vision path/to/room.png --direction north
 
-    # Vision extraction only (batch of 2)
-    uv run python tests/e2e/manual_test.py vision path/to/room1.png path/to/room2.png -d north -d south
-
     # Merge only (2+ photos, no scoring)
     uv run python tests/e2e/manual_test.py merge path/to/room1.png path/to/room2.png
 
-    # Layout only (after extraction, requires dimensions)
-    uv run python tests/e2e/manual_test.py layout path/to/room.png --dimensions 4.5x3.5
+    # Layout only (after extraction, requires dimensions + grid-size)
+    uv run python tests/e2e/manual_test.py layout path/to/room.png --dimensions 4.5x3.5 --grid-size 3x3
 
     # Score only (requires a session from a prior evaluate run)
     uv run python tests/e2e/manual_test.py score --session-id <id>
 
-    # Full pipeline with school and birth date
+    # Full pipeline with school and birth date (CLI overrides config)
     uv run python tests/e2e/manual_test.py evaluate path/to/room.png --school form --birth-date 1990-01-15
 """
 import argparse
@@ -36,6 +42,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib  # type: ignore[no-redef]
 
 from app.core.utils import process_image_base64
 from app.models.schemas import MultiImageData, Dimensions
@@ -64,8 +75,69 @@ def parse_dimensions(value: str) -> Dimensions:
     return Dimensions(length=float(match.group(1)), width=float(match.group(2)))
 
 
+def load_config(config_path: Path | None) -> dict:
+    if config_path is None:
+        config_path = Path(__file__).parent / "config.toml"
+
+    if not config_path.exists():
+        return {}
+
+    with open(config_path, "rb") as f:
+        print(f"[Config] Loaded: {config_path}")
+        return tomllib.load(f)
+
+
+def merge_with_config(args: argparse.Namespace, config: dict) -> argparse.Namespace:
+    merged = argparse.Namespace(**vars(args))
+
+    if "room" in config:
+        room = config["room"]
+
+        if getattr(args, "images", None) is None or len(getattr(args, "images", []) or []) == 0:
+            image_paths = [img["path"] for img in config.get("images", [])]
+            if image_paths:
+                merged.images = image_paths
+
+        if getattr(args, "direction", None) is None:
+            directions = [img.get("direction", "not_sure") for img in config.get("images", [])]
+            if directions:
+                merged.direction = directions
+
+        if getattr(args, "dimensions", None) is None and "dimensions" in room:
+            try:
+                merged.dimensions = parse_dimensions(room["dimensions"])
+            except ValueError:
+                pass
+
+        if not hasattr(merged, "grid_size") or getattr(merged, "grid_size", None) is None:
+            if "grid_size" in room:
+                merged.grid_size = room["grid_size"]
+
+        if args.school == "black_hat" and "school" in room:
+            merged.school = room["school"]
+
+        if getattr(args, "birth_date", None) is None and "birth_date" in room:
+            merged.birth_date = room["birth_date"]
+
+        if getattr(args, "kua_number", None) is None and "kua_number" in room:
+            merged.kua_number = room["kua_number"]
+
+        if getattr(args, "building_date", None) is None and "building_date" in room:
+            merged.building_date = room["building_date"]
+
+    return merged
+
+
+def _resolve_asset_path(path: str) -> Path:
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return Path(__file__).parent.parent / "assets" / path
+
+
 def load_image_base64(path: str) -> str:
-    with open(path, "rb") as f:
+    resolved = _resolve_asset_path(path)
+    with open(resolved, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
@@ -126,15 +198,19 @@ def print_room_grid(room_grid, length: float | None = None, width: float | None 
     if not room_grid or not room_grid.cells:
         print("[Layout] No grid generated")
         return
+    grid_size_str = getattr(room_grid, "grid_size", "4x4")
+    n = int(grid_size_str.split("x")[0])
     dims = f"{length}m x {width}m" if length and width else "dimensions unknown"
-    print(f"\n[Layout] Room Grid ({dims}) — 4x4 (top-left = north-west)")
-    print("          Col 0    Col 1    Col 2    Col 3")
-    print("       +" + "-------+" * 4)
-    for row in range(4):
+    print(f"\n[Layout] Room Grid ({dims}) — {grid_size_str} (top-left = north-west)")
+    col_header = "  " + "  ".join(f"Col {i}  " for i in range(n))
+    print(f"         {col_header}")
+    sep = "       +" + "-------+" * n
+    print(sep)
+    for row in range(n):
         row_label = f"Row {row}"
-        cells = [room_grid.cells.get(f"{row},{col}", "empty") for col in range(4)]
+        cells = [room_grid.cells.get(f"{row},{col}", "empty") for col in range(n)]
         print(f"  {row_label}  | " + " | ".join(f"{c:^5}" for c in cells) + " |")
-        print("       +" + "-------+" * 4)
+        print(sep)
 
 
 def print_architectural_features(af):
@@ -207,18 +283,18 @@ async def cmd_merge(image_paths: list[str], directions: list[str | None], dimens
     return merged
 
 
-async def cmd_layout(extraction_or_merged, dimensions: Dimensions | None):
+async def cmd_layout(extraction_or_merged, dimensions: Dimensions | None, grid_size: str = "4x4"):
     print_divider("Layout Generation")
     if dimensions is None:
         print("[Layout] ERROR: --dimensions required for layout generation")
-        return None, None
+        return None
 
     if hasattr(extraction_or_merged, "model_dump_json"):
         json_data = extraction_or_merged.model_dump_json(indent=2)
     else:
         json_data = extraction_or_merged
 
-    grid = await layout_service.generate_grid(json_data, dimensions)
+    grid = await layout_service.generate_grid(json_data, dimensions, grid_size=grid_size)
     print_room_grid(grid, dimensions.length, dimensions.width)
     return grid
 
@@ -244,12 +320,14 @@ async def cmd_evaluate(
     birth_date: str | None,
     kua_number: int | None,
     building_date: str | None,
+    grid_size: str = "4x4",
 ):
     """Full pipeline: vision -> merge -> layout -> score."""
     print_divider(f"Full Evaluate Pipeline")
     print(f"[Pipeline] Images: {len(image_paths)}")
     if dimensions:
         print(f"[Pipeline] Dimensions: {dimensions.length}m x {dimensions.width}m")
+    print(f"[Pipeline] Grid size: {grid_size}")
     print(f"[Pipeline] School: {school}")
     if birth_date:
         print(f"[Pipeline] Birth date: {birth_date}")
@@ -278,7 +356,7 @@ async def cmd_evaluate(
         room_grid = None
 
         if dimensions:
-            grid = await cmd_layout(result, dimensions)
+            grid = await cmd_layout(result, dimensions, grid_size=grid_size)
             room_grid = grid
 
     else:
@@ -305,7 +383,7 @@ async def cmd_evaluate(
         room_grid = None
 
         if dimensions:
-            grid = await cmd_layout(merged, dimensions)
+            grid = await cmd_layout(merged, dimensions, grid_size=grid_size)
             room_grid = grid
 
     print_divider(f"Scoring ({school})")
@@ -333,6 +411,18 @@ async def cmd_evaluate(
     }
 
 
+def parse_grid_size(value: str) -> str:
+    match = re.match(r"^(\d+)x(\d+)$", value.strip())
+    if not match:
+        raise ValueError(f"Invalid grid_size format: {value!r}. Expected 'NxN' (e.g. '3x3', '4x4', '5x5')")
+    n = int(match.group(1))
+    if n < 1 or n > 10:
+        raise ValueError(f"grid_size N must be 1..10, got {n}")
+    if match.group(1) != match.group(2):
+        raise ValueError(f"grid_size must be 'NxN', got {value!r}")
+    return f"{n}x{n}"
+
+
 async def main():
     parser = argparse.ArgumentParser(
         description="Manual E2E test for FengShuiAI full pipeline",
@@ -341,13 +431,18 @@ async def main():
 Commands:
   vision    Vision extraction only (single image or batch)
   merge     Vision + merge (2+ images, no scoring)
-  layout    Layout generation only (requires --dimensions)
+  layout    Layout generation only (requires --dimensions + --grid-size)
   score     Score a stored session (requires --session-id)
   evaluate  Full pipeline: vision -> merge -> layout -> score (default)
 
+Config:
+  Config file (config.toml) is auto-loaded from the same directory as this script.
+  Config values override CLI defaults. Run without arguments to use config.
+
 Examples:
-  uv run python tests/e2e/manual_test.py evaluate room.png
-  uv run python tests/e2e/manual_test.py evaluate room1.png room2.png --dimensions 4.5x3.5
+  uv run python tests/e2e/manual_test.py                         # uses config.toml
+  uv run python tests/e2e/manual_test.py evaluate room.png       # CLI image overrides config
+  uv run python tests/e2e/manual_test.py evaluate room1.png room2.png --dimensions 4.5x3.5 --grid-size 3x3
   uv run python tests/e2e/manual_test.py merge room1.png room2.png
   uv run python tests/e2e/manual_test.py score --session-id abc123
         """,
@@ -362,6 +457,7 @@ Examples:
     parser.add_argument("images", nargs="*", help="Path to image file(s)")
     parser.add_argument("--direction", "-d", action="append", help="Direction per image (north/south/east/west)")
     parser.add_argument("--dimensions", "-dim", type=str, help="Room dimensions (e.g. 4.5x3.5)")
+    parser.add_argument("--grid-size", "-g", type=str, default=None, help="Grid size as 'NxN' (e.g. '3x3', '4x4', up to '10x10')")
     parser.add_argument("--school", "-s", default="black_hat",
                         choices=["black_hat", "form", "three_door", "five_elements", "compass"],
                         help="Feng Shui school (default: black_hat)")
@@ -369,13 +465,29 @@ Examples:
     parser.add_argument("--kua-number", type=int, help="Kua number (1-9) for Eight Mansions")
     parser.add_argument("--building-date", type=str, help="Building date for Flying Star (YYYY-MM-DD)")
     parser.add_argument("--session-id", type=str, help="Session ID for score command")
+    parser.add_argument("--config", "-c", type=str, help="Path to config.toml (default: config.toml next to this script)")
 
     args = parser.parse_args()
 
+    config_path = Path(args.config) if args.config else None
+    config = load_config(config_path)
+    args = merge_with_config(args, config)
+
     dimensions = None
-    if args.dimensions:
+    if getattr(args, "dimensions", None) is not None:
+        if isinstance(args.dimensions, str):
+            try:
+                dimensions = parse_dimensions(args.dimensions)
+            except ValueError as e:
+                print(f"[Error] {e}")
+                sys.exit(1)
+        elif hasattr(args.dimensions, "length"):
+            dimensions = args.dimensions
+
+    grid_size = "4x4"
+    if getattr(args, "grid_size", None):
         try:
-            dimensions = parse_dimensions(args.dimensions)
+            grid_size = parse_grid_size(args.grid_size)
         except ValueError as e:
             print(f"[Error] {e}")
             sys.exit(1)
@@ -407,7 +519,7 @@ Examples:
         return
 
     if not args.images:
-        print("[Error] No images provided. See --help for usage.")
+        print("[Error] No images provided (set [[images]] in config.toml or pass as positional args). See --help.")
         sys.exit(1)
 
     if command == "vision":
@@ -421,7 +533,7 @@ Examples:
             print("[Error] --dimensions required for layout command")
             sys.exit(1)
         extraction, _ = await cmd_vision(args.images, directions, dimensions)
-        await cmd_layout(extraction, dimensions)
+        await cmd_layout(extraction, dimensions, grid_size=grid_size)
 
     elif command == "evaluate":
         await cmd_evaluate(
@@ -432,6 +544,7 @@ Examples:
             args.birth_date,
             args.kua_number,
             args.building_date,
+            grid_size=grid_size,
         )
 
     print("\n[Done]")

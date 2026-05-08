@@ -74,13 +74,14 @@ class RoomGrid(BaseModel):
         description="Mapping of 'row,col' -> furniture type or 'empty'. Row 0 is top (north), col 0 is left (west)."
     )
     grid_size: str = "4x4"
-    scale_note: str = "Each cell represents approximately 1/<total area of the grid> of the room. 0,0 = top-left (north-west corner)."
+    scale_note: Optional[str] = None
 
 
 class EvaluateRequest(BaseModel):
     image: Optional[str] = Field(default=None, description="Base64-encoded single image")
     images: Optional[list[MultiImageData]] = Field(default=None, description="Multiple images with direction metadata")
     dimensions: Optional[Dimensions] = Field(default=None, description="Room dimensions (required for grid generation, optional otherwise)")
+    grid_size: Optional[str] = Field(default="4x4", description="Grid size as 'NxN' (e.g. '3x3', '4x4', '5x5', up to '10x10'). Defaults to '4x4'.")
     session_id: Optional[str] = None
     school: FENG_SHUI_SCHOOLS = "black_hat"
     birth_date: Optional[str] = Field(default=None, description="Birth date for Eight Mansions calculation (YYYY-MM-DD)")

@@ -31,11 +31,12 @@ def make_mock_merged_with_elements(elements: list[DetectedElement], room_grid: R
     )
 
 
-def make_mock_room_grid() -> RoomGrid:
-    cells = {f"{r},{c}": "empty" for r in range(4) for c in range(4)}
+def make_mock_room_grid(grid_size: str = "4x4", scale_note: str | None = None) -> RoomGrid:
+    n = int(grid_size.split("x")[0])
+    cells = {f"{r},{c}": "empty" for r in range(n) for c in range(n)}
     cells["0,0"] = "sofa"
     cells["0,1"] = "sofa"
-    return RoomGrid(cells=cells)
+    return RoomGrid(cells=cells, grid_size=grid_size, scale_note=scale_note)
 
 
 def make_mock_score(
@@ -199,9 +200,10 @@ class TestEvaluateEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["room_grid"] is not None
-        assert data["room_grid"]["grid_size"] == "4x4"
+        grid_size_str = data["room_grid"]["grid_size"]
+        n = int(grid_size_str.split("x")[0])
         cells = data["room_grid"]["cells"]
-        expected_keys = [f"{r},{c}" for r in range(4) for c in range(4)]
+        expected_keys = [f"{r},{c}" for r in range(n) for c in range(n)]
         assert set(cells.keys()) == set(expected_keys)
         assert data["dimensions"]["length"] == 5.0
         assert data["dimensions"]["width"] == 4.0
@@ -275,3 +277,47 @@ class TestEvaluateEndpoint:
         assert len(scoring_call_args["elements"]) == 1
         assert scoring_call_args["elements"][0]["type"] == "plant"
         assert scoring_call_args["school"] == "black_hat"
+
+    def test_evaluate_with_custom_grid_size(self, client: TestClient):
+        mock_result = make_mock_extraction()
+        mock_grid = make_mock_room_grid(grid_size="3x3", scale_note="Each cell represents approximately 1/9 of the room. 0,0 = top-left (north-west corner).")
+        mock_merged = make_mock_merged_with_elements(mock_result.elements, room_grid=mock_grid)
+        with patch("app.routes.evaluate.process_image_base64", return_value="processed_fake_base64"), \
+             patch("app.routes.evaluate.vision_service.extract_elements_batch", new_callable=AsyncMock, return_value=[mock_result]), \
+             patch("app.routes.evaluate.merge_service.merge_results", new_callable=AsyncMock, return_value=mock_merged), \
+             patch("app.routes.evaluate.layout_service.generate_grid", new_callable=AsyncMock, return_value=mock_grid), \
+             patch("app.routes.evaluate.scoring_service.score", new_callable=AsyncMock, return_value=make_mock_score()):
+            response = client.post("/v1/evaluate", json={
+                "images": [{"image": "fake_base64", "direction": "north"}],
+                "dimensions": {"length": 4.5, "width": 3.5},
+                "grid_size": "3x3",
+            })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["room_grid"]["grid_size"] == "3x3"
+        assert "scale_note" in data["room_grid"]
+        assert "1/9" in data["room_grid"]["scale_note"]
+        assert len(data["room_grid"]["cells"]) == 9
+
+    def test_evaluate_grid_size_stored_in_session(self, client: TestClient):
+        from app.services.session import get_stored_session_data
+        mock_result = make_mock_extraction()
+        mock_grid = make_mock_room_grid(grid_size="5x5")
+        mock_merged = make_mock_merged_with_elements(mock_result.elements, room_grid=mock_grid)
+        with patch("app.routes.evaluate.process_image_base64", return_value="processed_fake_base64"), \
+             patch("app.routes.evaluate.vision_service.extract_elements_batch", new_callable=AsyncMock, return_value=[mock_result]), \
+             patch("app.routes.evaluate.merge_service.merge_results", new_callable=AsyncMock, return_value=mock_merged), \
+             patch("app.routes.evaluate.layout_service.generate_grid", new_callable=AsyncMock, return_value=mock_grid), \
+             patch("app.routes.evaluate.scoring_service.score", new_callable=AsyncMock, return_value=make_mock_score()):
+            response = client.post("/v1/evaluate", json={
+                "images": [{"image": "fake_base64", "direction": "north"}],
+                "dimensions": {"length": 4.5, "width": 3.5},
+                "grid_size": "5x5",
+                "session_id": "session-grid-size-test",
+            })
+
+        assert response.status_code == 200
+        session_data = get_stored_session_data("session-grid-size-test")
+        assert session_data is not None
+        assert session_data["grid_size"] == "5x5"

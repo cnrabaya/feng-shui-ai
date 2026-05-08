@@ -1,0 +1,28 @@
+# FengShuiAI Manual Test Config
+# Copy this file to config.toml and edit the values.
+# manual_test.py auto-loads config.toml from its own directory.
+# Config values override CLI defaults.
+
+[room]
+dimensions = "6x5"
+grid_size = "6x6"
+school = "black_hat"
+
+# Optional feng shui parameters (uncomment to use):
+# birth_date = "1990-01-15"
+# kua_number = 5
+# building_date = "2020-06-01"
+
+# Image files (paths are relative to tests/assets/, or absolute)
+[[images]]
+path = "room_1.png"
+direction = "north"
+
+[[images]]
+path = "room_2.png"
+direction = "east"
+
+# To add more images, copy the block above and change path/direction:
+# [[images]]
+# path = "path/to/room2.png"
+# direction = "south"

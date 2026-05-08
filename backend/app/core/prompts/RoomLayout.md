@@ -5,14 +5,14 @@ Room dimensions: {room_length}m x {room_width}m
 Extraction result:
 {extraction_json}
 
-Your task: Produce a 4x4 room layout grid.
+Your task: Produce a {grid_size} room layout grid.
 
 INSTRUCTIONS:
-- Create a 4x4 grid (16 cells, 4 rows x 4 columns)
+- Create a {grid_size} grid ({N} rows x {N} columns)
 - 0,0 = top-left corner of the room (north-west when facing into the room)
 - Row 0 represents the NORTH wall/area of the room
 - Col 0 represents the WEST wall/area of the room
-- Each cell represents approximately 1/4 of the room
+- {scale_note}
 - Scale furniture using room dimensions. A standard:
   - Bed: ~1.5-2m long, ~0.9-1.6m wide
   - Sofa: ~2-2.5m long, ~0.8-1m wide
@@ -27,26 +27,6 @@ INSTRUCTIONS:
 - Return ONLY valid JSON with no markdown fences or additional text
 
 OUTPUT FORMAT:
-{{
-  "cells": {{
-    "0,0": "furniture_type or empty",
-    "0,1": "furniture_type or empty",
-    "0,2": "furniture_type or empty",
-    "0,3": "furniture_type or empty",
-    "1,0": "furniture_type or empty",
-    "1,1": "furniture_type or empty",
-    "1,2": "furniture_type or empty",
-    "1,3": "furniture_type or empty",
-    "2,0": "furniture_type or empty",
-    "2,1": "furniture_type or empty",
-    "2,2": "furniture_type or empty",
-    "2,3": "furniture_type or empty",
-    "3,0": "furniture_type or empty",
-    "3,1": "furniture_type or empty",
-    "3,2": "furniture_type or empty",
-    "3,3": "furniture_type or empty"
-  }},
-  "grid_size": "4x4"
-}}
+{cells_json}
 
 IMPORTANT: Return ONLY the JSON object. No code fences, no explanation, no surrounding text.

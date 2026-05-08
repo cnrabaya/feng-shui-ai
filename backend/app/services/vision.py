@@ -42,19 +42,29 @@ class VisionService(VisionLLMService):
         direction: str | None = None,
         dimensions: Dimensions | None = None,
         return_raw: bool = False,
+        max_retries: int = 3,
     ) -> ExtractionResult | tuple[ExtractionResult, str]:
         prompt = self._format_element_prompt(direction, dimensions)
         logger.info(f"Extracting elements (direction={direction or 'unknown'}, image={redact_image(image_base64[:100])})")
-        raw = await self.call_vision(image_base64, prompt)
-        result = self._parse_extraction(raw)
-        logger.info(
-            f"Extraction complete: {len(result.elements)} elements, "
-            f"{len(result.architectural_features.doors)} doors, "
-            f"{len(result.architectural_features.windows)} windows"
-        )
-        if return_raw:
-            return result, raw
-        return result
+
+        for attempt in range(max_retries):
+            try:
+                raw = await self.call_vision(image_base64, prompt)
+                result = self._parse_extraction(raw)
+                logger.info(
+                    f"Extraction complete: {len(result.elements)} elements, "
+                    f"{len(result.architectural_features.doors)} doors, "
+                    f"{len(result.architectural_features.windows)} windows"
+                )
+                if return_raw:
+                    return result, raw
+                return result
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Element extraction failed after {max_retries} attempts: {type(e).__name__}: {e}")
+                    raise
+                logger.warning(f"Element extraction failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}, retrying...")
+                await asyncio.sleep(2 ** attempt)
 
     async def extract_elements_batch(
         self,

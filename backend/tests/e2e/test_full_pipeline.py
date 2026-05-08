@@ -132,10 +132,12 @@ class TestEvaluateEndpointE2E:
         assert "score" in data
         assert data["score"]["total"] >= 0
         assert data["room_grid"] is not None
-        assert data["room_grid"]["grid_size"] == "4x4"
+        grid_size_str = data["room_grid"]["grid_size"]
+        n = int(grid_size_str.split("x")[0])
+        assert 1 <= n <= 10
         cells = data["room_grid"]["cells"]
-        expected_keys = [f"{r},{c}" for r in range(4) for c in range(4)]
-        assert set(cells.keys()) == set(expected_keys)
+        expected_keys = set(f"{r},{c}" for r in range(n) for c in range(n))
+        assert set(cells.keys()) == expected_keys
         valid_types = {
             "bed", "sofa", "armchair", "dining_table", "coffee_table",
             "desk", "wardrobe", "dresser", "bookshelf", "tv_stand",

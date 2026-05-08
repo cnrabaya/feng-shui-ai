@@ -5,16 +5,25 @@ from app.models.schemas import Dimensions, RoomGrid
 from app.services.layout import LayoutService
 
 
-MOCK_GRID_RESPONSE = """{
-  "cells": {
-    "0,0": "bed", "0,1": "bed", "0,2": "empty", "0,3": "plant",
-    "1,0": "empty", "1,1": "empty", "1,2": "rug", "1,3": "empty",
-    "2,0": "sofa", "2,1": "sofa", "2,2": "coffee_table", "2,3": "lamp_floor",
-    "3,0": "empty", "3,1": "empty", "3,2": "empty", "3,3": "bookshelf"
-  },
-  "grid_size": "4x4"
-}"""
+MOCK_GRID_SIZE = "4x4"
+MOCK_GRID_N = int(MOCK_GRID_SIZE.split("x")[0])
 
+
+def _make_grid_response(grid_size: str, n: int) -> str:
+    cells = {f"{r},{c}": "empty" for r in range(n) for c in range(n)}
+    if n >= 3:
+        cells["0,0"] = "bed"
+        cells["0,1"] = "bed"
+        cells["2,0"] = "sofa"
+        cells["2,1"] = "sofa"
+        cells["2,2"] = "coffee_table"
+    if n >= 4:
+        cells["3,3"] = "bookshelf"
+    import json
+    return json.dumps({"cells": cells, "grid_size": grid_size})
+
+
+MOCK_GRID_RESPONSE = _make_grid_response(MOCK_GRID_SIZE, MOCK_GRID_N)
 MOCK_GRID_WRAPPED = "Here is the layout:\n" + MOCK_GRID_RESPONSE + "\nDoes this look right?"
 
 
@@ -42,12 +51,14 @@ class TestLayoutService:
         })()):
             result = await layout_service.generate_grid(
                 '{"elements": []}',
-                Dimensions(length=4.5, width=3.5)
+                Dimensions(length=4.5, width=3.5),
+                grid_size=MOCK_GRID_SIZE,
             )
 
         assert isinstance(result, RoomGrid)
-        assert result.grid_size == "4x4"
-        assert len(result.cells) == 16
+        assert result.grid_size == MOCK_GRID_SIZE
+        assert result.scale_note == "Each cell represents approximately 1/16 of the room. 0,0 = top-left (north-west corner)."
+        assert len(result.cells) == MOCK_GRID_N * MOCK_GRID_N
         assert "0,0" in result.cells
         assert "3,3" in result.cells
         assert result.cells["0,0"] == "bed"
@@ -65,11 +76,12 @@ class TestLayoutService:
         })()):
             result = await layout_service.generate_grid(
                 '{"elements": []}',
-                Dimensions(length=4.5, width=3.5)
+                Dimensions(length=4.5, width=3.5),
+                grid_size=MOCK_GRID_SIZE,
             )
 
         assert isinstance(result, RoomGrid)
-        assert len(result.cells) == 16
+        assert len(result.cells) == MOCK_GRID_N * MOCK_GRID_N
         assert result.cells["0,0"] == "bed"
 
     @pytest.mark.asyncio
@@ -93,7 +105,8 @@ class TestLayoutService:
         })()):
             result = await layout_service.generate_grid(
                 '{"elements": []}',
-                Dimensions(length=4.5, width=3.5)
+                Dimensions(length=4.5, width=3.5),
+                grid_size=MOCK_GRID_SIZE,
             )
 
         assert call_count == 3
@@ -111,7 +124,8 @@ class TestLayoutService:
         })()):
             result = await layout_service.generate_grid(
                 '{"elements": [{"id": "sofa_1", "type": "sofa"}]}',
-                Dimensions(length=4.5, width=3.5)
+                Dimensions(length=4.5, width=3.5),
+                grid_size=MOCK_GRID_SIZE,
             )
 
         valid_types = {"bed", "sofa", "armchair", "dining_table", "coffee_table",
@@ -122,7 +136,7 @@ class TestLayoutService:
             assert value in valid_types, f"Cell {key} has invalid type: {value}"
 
     @pytest.mark.asyncio
-    async def test_generate_grid_cells_keys_cover_all_16_positions(self, layout_service: LayoutService):
+    async def test_generate_grid_cells_keys_cover_all_NxN_positions(self, layout_service: LayoutService):
         mock_response = make_mock_response(MOCK_GRID_RESPONSE)
 
         with patch.object(layout_service.client, "chat", type("MockChat", (), {
@@ -130,16 +144,14 @@ class TestLayoutService:
                 "create": AsyncMock(return_value=mock_response)
             })()
         })()):
-            result = await layout_service.generate_grid("{}", Dimensions(length=4.5, width=3.5))
+            result = await layout_service.generate_grid("{}", Dimensions(length=4.5, width=3.5), grid_size=MOCK_GRID_SIZE)
 
-        expected_keys = {f"{r},{c}" for r in range(4) for c in range(4)}
+        expected_keys = {f"{r},{c}" for r in range(MOCK_GRID_N) for c in range(MOCK_GRID_N)}
         assert set(result.cells.keys()) == expected_keys
 
     @pytest.mark.asyncio
     async def test_generate_grid_uses_correct_dimensions_in_prompt(self, layout_service: LayoutService):
         captured_messages = None
-
-        original_create = layout_service.client.chat.completions.create
 
         async def capture_create(*args, **kwargs):
             nonlocal captured_messages
@@ -149,10 +161,76 @@ class TestLayoutService:
         with patch.object(layout_service.client.chat.completions, "create", capture_create):
             await layout_service.generate_grid(
                 '{"elements": []}',
-                Dimensions(length=6.0, width=4.0)
+                Dimensions(length=6.0, width=4.0),
+                grid_size=MOCK_GRID_SIZE,
             )
 
         prompt_text = captured_messages[0]["content"]
         assert "6.0" in prompt_text
         assert "4.0" in prompt_text
         assert "6.0m x 4.0m" in prompt_text
+
+    @pytest.mark.asyncio
+    async def test_generate_grid_3x3(self, layout_service: LayoutService):
+        grid_size = "3x3"
+        n = 3
+        mock_response = make_mock_response(_make_grid_response(grid_size, n))
+
+        with patch.object(layout_service.client, "chat", type("MockChat", (), {
+            "completions": type("MockCompletions", (), {
+                "create": AsyncMock(return_value=mock_response)
+            })()
+        })()):
+            result = await layout_service.generate_grid(
+                '{"elements": []}',
+                Dimensions(length=4.5, width=3.5),
+                grid_size=grid_size,
+            )
+
+        assert isinstance(result, RoomGrid)
+        assert result.grid_size == "3x3"
+        assert result.scale_note == "Each cell represents approximately 1/9 of the room. 0,0 = top-left (north-west corner)."
+        assert len(result.cells) == 9
+        expected_keys = {f"{r},{c}" for r in range(3) for c in range(3)}
+        assert set(result.cells.keys()) == expected_keys
+
+    @pytest.mark.asyncio
+    async def test_generate_grid_wrong_cell_count_raises(self, layout_service: LayoutService):
+        bad_response = make_mock_response('{"cells": {"0,0": "bed", "0,1": "empty"}, "grid_size": "3x3"}')
+
+        with patch.object(layout_service.client, "chat", type("MockChat", (), {
+            "completions": type("MockCompletions", (), {
+                "create": AsyncMock(return_value=bad_response)
+            })()
+        })()):
+            with pytest.raises(ValueError, match="requires 9( cells)?"):
+                await layout_service.generate_grid(
+                    '{"elements": []}',
+                    Dimensions(length=4.5, width=3.5),
+                    grid_size="3x3",
+                )
+
+    @pytest.mark.asyncio
+    async def test_generate_grid_prompt_contains_grid_size_and_scale_note(self, layout_service: LayoutService):
+        captured_messages = None
+        test_grid_size = "5x5"
+        test_n = 5
+        mock_response_content = _make_grid_response(test_grid_size, test_n)
+
+        async def capture_create(*args, **kwargs):
+            nonlocal captured_messages
+            captured_messages = kwargs.get("messages") or (args[0] if args else None)
+            return make_mock_response(mock_response_content)
+
+        with patch.object(layout_service.client.chat.completions, "create", capture_create):
+            await layout_service.generate_grid(
+                '{"elements": []}',
+                Dimensions(length=6.0, width=4.0),
+                grid_size=test_grid_size,
+            )
+
+        prompt_text = captured_messages[0]["content"]
+        assert '"grid_size": "5x5"' in prompt_text
+        assert "1/25" in prompt_text
+        assert '"5x5"' in prompt_text
+        assert "5x5 grid" in prompt_text or "5x5" in prompt_text

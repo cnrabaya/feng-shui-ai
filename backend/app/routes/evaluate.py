@@ -41,11 +41,11 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
 
         if dimensions:
             logger.debug(f"Generating room grid for session={redact_session_id(session_id)}")
-            grid = await layout_service.generate_grid(merged.model_dump_json(indent=2), dimensions)
+            grid = await layout_service.generate_grid(merged.model_dump_json(indent=2), dimensions, grid_size=request.grid_size or "4x4")
             merged.room_grid = grid
             room_grid = grid
 
-        store_merged_result(session_id, merged, school=request.school, dimensions=request.dimensions)
+        store_merged_result(session_id, merged, school=request.school, dimensions=request.dimensions, grid_size=request.grid_size)
         elements = [
             {
                 "id": e.id,
@@ -65,10 +65,10 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
 
         if dimensions:
             logger.debug(f"Generating room grid for session={redact_session_id(session_id)}")
-            grid = await layout_service.generate_grid(extraction.model_dump_json(indent=2), dimensions)
+            grid = await layout_service.generate_grid(extraction.model_dump_json(indent=2), dimensions, grid_size=request.grid_size or "4x4")
             room_grid = grid
 
-        store_extraction_result(session_id, extraction, school=request.school, dimensions=request.dimensions)
+        store_extraction_result(session_id, extraction, school=request.school, dimensions=request.dimensions, grid_size=request.grid_size)
         elements = [
             {
                 "id": e.id,
