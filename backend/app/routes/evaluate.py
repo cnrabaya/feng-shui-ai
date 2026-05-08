@@ -75,5 +75,5 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
     return EvaluateResponse(
         session_id=session_id,
         elements=elements,
-        score=score_result,
+        score=MOCK_SCORE,
     )

@@ -5,11 +5,14 @@ from typing import Optional, Literal, Any
 FENG_SHUI_SCHOOLS = Literal["black_hat", "form", "three_door", "five_elements", "compass"]
 
 
+DIMENSION_UNITS = Literal["meters", "feet"]
+
+
 class Dimensions(BaseModel):
-    length: float
-    width: float
-    height: float
-    unit: str = "meters"
+    length: float = Field(gt=0, description="Length of the room")
+    width: float = Field(gt=0, description="Width of the room")
+    height: float = Field(gt=0, description="Height of the room")
+    unit: DIMENSION_UNITS = "meters"
 
 
 class Element(BaseModel):
