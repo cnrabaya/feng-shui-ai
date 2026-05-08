@@ -24,12 +24,12 @@ MERGE_PHOTOS_TEMPLATE = load_prompt("MergePhotos.md")
 class MergeService:
     def __init__(self):
         self.client = AsyncOpenAI(
-            api_key=settings.qwen_vl_api_key,
-            base_url=settings.vllm_base_url.rsplit("/v1", 1)[0] if "/v1" in settings.vllm_base_url else settings.vllm_base_url,
+            api_key=settings.api_key,
+            base_url=settings.vllm_base_url,
         )
         self.model = settings.model_name
 
-    async def merge_results(self, extractions: list[ExtractionResult]) -> MergedRoom:
+    async def merge_results(self, extractions: list[ExtractionResult | tuple[ExtractionResult, str]]) -> MergedRoom:
         if not extractions:
             logger.info("Merge called with empty extractions list, returning empty MergedRoom")
             return MergedRoom(
@@ -39,9 +39,10 @@ class MergeService:
                 architectural_features=ArchitecturalFeatures(),
             )
 
+        parsed = [e[0] if isinstance(e, tuple) else e for e in extractions]
         all_jsons = "\n".join(
             f"--- Photo {i + 1} ---\n{ext.model_dump_json(indent=2)}"
-            for i, ext in enumerate(extractions)
+            for i, ext in enumerate(parsed)
         )
 
         prompt = MERGE_PHOTOS_TEMPLATE
@@ -100,13 +101,21 @@ class MergeService:
         unconfirmed = [DetectedElement(**e) for e in data.get("unconfirmed_elements", [])]
         arch_data = data.get("architectural_features", {})
 
+        def _normalize_arch_items(items: list) -> list[str]:
+            return [
+                item["id"] if isinstance(item, dict) and "id" in item
+                else item.get("location", str(item)) if isinstance(item, dict)
+                else item
+                for item in items
+            ]
+
         return MergedRoom(
             confirmed_elements=confirmed,
             unconfirmed_elements=unconfirmed,
             spatial_conflicts=data.get("spatial_conflicts", []),
             architectural_features=ArchitecturalFeatures(
-                doors=arch_data.get("doors", []),
-                windows=arch_data.get("windows", []),
+                doors=_normalize_arch_items(arch_data.get("doors", [])),
+                windows=_normalize_arch_items(arch_data.get("windows", [])),
                 visible_walls=arch_data.get("visible_walls", []),
             ),
         )
