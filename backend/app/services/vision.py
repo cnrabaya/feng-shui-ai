@@ -1,98 +1,76 @@
-import json
 import asyncio
-from openai import AsyncOpenAI
 
-from app.core.config import settings
+from app.core.prompts import load_prompt
 from app.core.logger import get_logger, redact_image
 from app.models.schemas import (
     ExtractionResult,
     DetectedElement,
     ArchitecturalFeatures,
     MultiImageData,
+    Dimensions,
 )
-
-from pathlib import Path
+from app.services.llm import VisionLLMService
 
 logger = get_logger("vision")
-
-PROMPTS_DIR = Path(__file__).parent / "prompts"
-
-
-def load_prompt(filename: str) -> str:
-    file_path = PROMPTS_DIR / filename
-    return file_path.read_text(encoding="utf-8")
-
 
 ELEMENT_EXTRACTION_TEMPLATE = load_prompt("ElementExtraction.md")
 ELEMENT_NAMING_SCHEME = load_prompt("ElementNamingScheme.md")
 
+_vision_service: "VisionService | None" = None
 
-class VisionService:
+
+class VisionService(VisionLLMService):
     def __init__(self):
-        self.client = AsyncOpenAI(
-            api_key=settings.api_key,
-            base_url=settings.vllm_base_url,
-        )
-        self.model = settings.model_name
+        super().__init__(max_tokens=4096)
 
-    def _format_element_prompt(self, direction: str | None = None) -> str:
+    def _format_element_prompt(self, direction: str | None = None, dimensions: Dimensions | None = None) -> str:
         prompt = ELEMENT_EXTRACTION_TEMPLATE + ELEMENT_NAMING_SCHEME
+        if dimensions:
+            dim_line = f"Room dimensions: {dimensions.length}m x {dimensions.width}m. Use this scale to estimate furniture size."
+            prompt = prompt.replace("Room dimensions: {room_dimensions}", dim_line)
+        else:
+            prompt = prompt.replace("Room dimensions: {room_dimensions}\n", "")
         if direction and direction != "not_sure":
             prompt = prompt.replace("{direction}", direction)
         else:
             prompt = prompt.replace("You are looking at the room from the direction: {direction}\n\n", "")
         return prompt
 
-    async def _call_qwen(self, image_base64: str, prompt: str, max_retries: int = 3) -> str:
-        for attempt in range(max_retries):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
-                                },
-                            ],
-                        }
-                    ],
-                    temperature=0.0,
-                    max_tokens=4096,
-                )
-                raw = response.choices[0].message.content
-                logger.debug(f"AI response ({len(raw)} chars): {raw[:500]}{'...' if len(raw) > 500 else ''}")
-                return raw
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"Qwen-VL call failed after {max_retries} attempts: {type(e).__name__}: {e}")
-                    raise
-                logger.warning(f"Qwen-VL call failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}, retrying...")
-                await asyncio.sleep(2 ** attempt)
-
-    async def extract_elements(self, image_base64: str, direction: str | None = None, return_raw: bool = False) -> ExtractionResult | tuple[ExtractionResult, str]:
-        prompt = self._format_element_prompt(direction)
+    async def extract_elements(
+        self,
+        image_base64: str,
+        direction: str | None = None,
+        dimensions: Dimensions | None = None,
+        return_raw: bool = False,
+    ) -> ExtractionResult | tuple[ExtractionResult, str]:
+        prompt = self._format_element_prompt(direction, dimensions)
         logger.info(f"Extracting elements (direction={direction or 'unknown'}, image={redact_image(image_base64[:100])})")
-        raw = await self._call_qwen(image_base64, prompt)
+        raw = await self.call_vision(image_base64, prompt)
         result = self._parse_extraction(raw)
-        logger.info(f"Extraction complete: {len(result.elements)} elements, {len(result.architectural_features.doors)} doors, {len(result.architectural_features.windows)} windows")
+        logger.info(
+            f"Extraction complete: {len(result.elements)} elements, "
+            f"{len(result.architectural_features.doors)} doors, "
+            f"{len(result.architectural_features.windows)} windows"
+        )
         if return_raw:
             return result, raw
         return result
 
     async def extract_elements_batch(
-        self, images: list[MultiImageData], max_concurrency: int = 3, return_raw: bool = False
+        self,
+        images: list[MultiImageData],
+        max_concurrency: int = 3,
+        dimensions: Dimensions | None = None,
+        return_raw: bool = False,
     ) -> list[ExtractionResult | tuple[ExtractionResult, str]]:
         logger.info(f"Batch extraction: {len(images)} image(s), max_concurrency={max_concurrency}")
         semaphore = asyncio.Semaphore(max_concurrency)
 
         async def extract_one(img_data: MultiImageData) -> ExtractionResult | tuple[ExtractionResult, str]:
             async with semaphore:
-                result = await self.extract_elements(img_data.image, img_data.direction, return_raw=return_raw)
-                return result
+                return await self.extract_elements(
+                    img_data.image, img_data.direction, dimensions=dimensions, return_raw=return_raw
+                )
 
         tasks = [extract_one(img) for img in images]
         results = await asyncio.gather(*tasks)
@@ -101,38 +79,29 @@ class VisionService:
         return results
 
     def _parse_extraction(self, raw: str) -> ExtractionResult:
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            import re
-
-            match = re.search(r"\{[\s\S]*\}", raw)
-            if match:
-                data = json.loads(match.group())
-                logger.warning(f"JSON parse required regex fallback, matched {len(match.group())} chars")
-            else:
-                logger.error(f"Failed to parse JSON from Qwen-VL response: {raw[:300]}")
-                raise ValueError(f"Failed to parse JSON from Qwen-VL response: {raw[:200]}")
+        data = self._parse_json_with_fallback(raw, "extraction")
 
         elements = [DetectedElement(**e) for e in data.get("elements", [])]
         arch_data = data.get("architectural_features", {})
 
-        def _normalize_ids(items: list) -> list[str]:
-            return [
-                item["id"] if isinstance(item, dict) and "id" in item
-                else item.get("location", str(item)) if isinstance(item, dict)
-                else item
-                for item in items
-            ]
-
         return ExtractionResult(
             elements=elements,
             architectural_features=ArchitecturalFeatures(
-                doors=_normalize_ids(arch_data.get("doors", [])),
-                windows=_normalize_ids(arch_data.get("windows", [])),
+                doors=self._normalize_to_string_list(arch_data.get("doors", [])),
+                windows=self._normalize_to_string_list(arch_data.get("windows", [])),
                 visible_walls=arch_data.get("visible_walls", []),
             ),
         )
 
 
-vision_service = VisionService()
+def get_vision_service() -> VisionService:
+    global _vision_service
+    if _vision_service is None:
+        _vision_service = VisionService()
+    return _vision_service
+
+
+def __getattr__(name: str):
+    if name == "vision_service":
+        return get_vision_service()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

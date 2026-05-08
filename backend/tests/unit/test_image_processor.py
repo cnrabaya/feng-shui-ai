@@ -5,7 +5,7 @@ import tempfile
 import pytest
 from PIL import Image, ImageOps
 
-from app.services.image_processor import fix_rotation, prepare_for_upload, process_image_base64
+from app.core.utils import fix_rotation, prepare_for_upload, process_image_base64
 
 
 def make_image(width: int, height: int, mode: str = "RGB") -> Image.Image:

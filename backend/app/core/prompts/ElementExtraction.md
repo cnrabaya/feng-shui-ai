@@ -1,4 +1,5 @@
 Analyze this room photo and return a JSON object.
+Room dimensions: {room_dimensions}
 You are looking at the room from the direction: {direction}
 
 Return:
@@ -20,6 +21,6 @@ Return:
   }}
 }}
 
-IMPORTANT: If an element is partially cut off at the edge of the frame, 
+IMPORTANT: If an element is partially cut off at the edge of the frame,
 mark partially_visible as true. Do not guess at elements outside the frame.
 Return ONLY valid JSON.

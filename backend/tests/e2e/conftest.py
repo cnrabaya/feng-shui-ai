@@ -5,7 +5,7 @@ import pytest
 
 from app.services.vision import VisionService
 from app.services.merge import MergeService
-from app.services.image_processor import process_image_base64
+from app.core.utils import process_image_base64
 from app.core.config import settings
 
 

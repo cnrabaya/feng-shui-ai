@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from app.services.image_processor import fix_rotation, prepare_for_upload
+from app.core.utils import fix_rotation, prepare_for_upload
 
 
 def load_and_encode_image(path: Path, max_dimension: int = 1920) -> str:

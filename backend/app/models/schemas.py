@@ -1,11 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 
 
 class Dimensions(BaseModel):
-    length: float
-    width: float
-    height: float
+    length: float = Field(description="Room length in meters", gt=0)
+    width: float = Field(description="Room width in meters", gt=0)
     unit: str = "meters"
 
 
@@ -69,19 +68,36 @@ class MergedRoom(BaseModel):
     unconfirmed_elements: list[DetectedElement]
     spatial_conflicts: list[dict] = Field(default_factory=list)
     architectural_features: ArchitecturalFeatures = Field(default_factory=ArchitecturalFeatures)
+    room_grid: Optional["RoomGrid"] = None
+
+
+class RoomGrid(BaseModel):
+    cells: dict[str, str] = Field(
+        description="Mapping of 'row,col' -> furniture type or 'empty'. Row 0 is top (north), col 0 is left (west)."
+    )
+    grid_size: str = "4x4"
+    scale_note: str = "Each cell represents approximately 1/4 of the room. 0,0 = top-left (north-west corner)."
 
 
 class EvaluateRequest(BaseModel):
     image: Optional[str] = Field(default=None, description="Base64-encoded single image")
     images: Optional[list[MultiImageData]] = Field(default=None, description="Multiple images with direction metadata")
-    dimensions: Optional[Dimensions] = None
+    dimensions: Optional[Dimensions] = Field(default=None, description="Room dimensions (required when providing multiple images)")
     session_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def dimensions_required_for_images(self):
+        if self.images and not self.dimensions:
+            raise ValueError("dimensions are required when multiple images are provided")
+        return self
 
 
 class EvaluateResponse(BaseModel):
     session_id: str
     elements: list[dict]
     score: Score
+    room_grid: Optional[RoomGrid] = None
+    dimensions: Optional[Dimensions] = None
 
 
 class SuggestRequest(BaseModel):
