@@ -1,12 +1,10 @@
 import json
-import asyncio
-from openai import AsyncOpenAI
-from typing import Optional, Any
+from typing import Optional
 
-from app.core.config import settings
-from app.core.logger import get_logger, redact_session_id
 from app.core.prompts import load_prompt
+from app.core.logger import get_logger, redact_session_id
 from app.models.schemas import Dimensions
+from app.services.llm import TextLLMService
 
 logger = get_logger("scoring")
 
@@ -19,14 +17,7 @@ SCHOOL_PROMPTS = {
 }
 
 
-class ScoringService:
-    def __init__(self):
-        self.client = AsyncOpenAI(
-            api_key=settings.api_key,
-            base_url=settings.vllm_base_url,
-        )
-        self.model = settings.model_name
-
+class ScoringService(TextLLMService):
     def _format_prompt(
         self,
         school: str,
@@ -65,44 +56,6 @@ Return ONLY valid JSON matching the output schema specified in the prompt.
 """
         return full_prompt
 
-    async def _call_qwen(self, prompt: str, max_retries: int = 3) -> str:
-        for attempt in range(max_retries):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt,
-                        }
-                    ],
-                    temperature=0.0,
-                    max_tokens=4096,
-                )
-                raw = response.choices[0].message.content
-                logger.debug(f"Scoring AI response ({len(raw)} chars): {raw[:500]}{'...' if len(raw) > 500 else ''}")
-                return raw
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"Scoring Qwen-VL call failed after {max_retries} attempts: {type(e).__name__}: {e}")
-                    raise
-                logger.warning(f"Scoring Qwen-VL call failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}, retrying...")
-                await asyncio.sleep(2 ** attempt)
-
-    def _parse_score_response(self, raw: str) -> dict:
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            import re
-            match = re.search(r"\{[\s\S]*\}", raw)
-            if match:
-                data = json.loads(match.group())
-                logger.warning(f"Scoring JSON parse required regex fallback, matched {len(match.group())} chars")
-            else:
-                logger.error(f"Failed to parse scoring JSON from Qwen-VL response: {raw[:300]}")
-                raise ValueError(f"Failed to parse scoring JSON: {raw[:200]}")
-        return data
-
     async def score(
         self,
         elements: list[dict],
@@ -119,8 +72,8 @@ Return ONLY valid JSON matching the output schema specified in the prompt.
 
         for attempt in range(max_retries):
             try:
-                raw = await self._call_qwen(prompt)
-                result = self._parse_score_response(raw)
+                raw = await self.call_text(prompt)
+                result = self._parse_json_with_fallback(raw, context="scoring")
                 logger.info(f"Scoring complete: total_score={result.get('total_score', 0)}, chi_flow={result.get('chi_flow', 'unknown')}")
                 return result
             except Exception as e:
@@ -128,7 +81,21 @@ Return ONLY valid JSON matching the output schema specified in the prompt.
                     logger.error(f"Scoring failed after {max_retries} attempts: {type(e).__name__}: {e}")
                     raise
                 logger.warning(f"Scoring failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}, retrying...")
+                import asyncio
                 await asyncio.sleep(2 ** attempt)
 
 
-scoring_service = ScoringService()
+_scoring_service: Optional[ScoringService] = None
+
+
+def get_scoring_service() -> ScoringService:
+    global _scoring_service
+    if _scoring_service is None:
+        _scoring_service = ScoringService()
+    return _scoring_service
+
+
+def __getattr__(name: str):
+    if name == "scoring_service":
+        return get_scoring_service()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

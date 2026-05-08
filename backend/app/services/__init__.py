@@ -1,6 +1,7 @@
 from app.services.vision import VisionService, get_vision_service
 from app.services.merge import MergeService, get_merge_service
 from app.services.layout import LayoutService, get_layout_service
+from app.services.scoring import ScoringService, get_scoring_service
 
 
 def __getattr__(name: str):
@@ -16,4 +17,8 @@ def __getattr__(name: str):
         from app.services.layout import get_layout_service
 
         return get_layout_service()
+    if name == "scoring_service":
+        from app.services.scoring import get_scoring_service
+
+        return get_scoring_service()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

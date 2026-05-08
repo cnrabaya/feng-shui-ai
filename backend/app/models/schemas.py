@@ -74,7 +74,7 @@ class RoomGrid(BaseModel):
         description="Mapping of 'row,col' -> furniture type or 'empty'. Row 0 is top (north), col 0 is left (west)."
     )
     grid_size: str = "4x4"
-    scale_note: str = "Each cell represents approximately 1/4 of the room. 0,0 = top-left (north-west corner)."
+    scale_note: str = "Each cell represents approximately 1/<total area of the grid> of the room. 0,0 = top-left (north-west corner)."
 
 
 class EvaluateRequest(BaseModel):

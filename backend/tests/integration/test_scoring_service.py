@@ -56,7 +56,7 @@ class TestScoringServiceFormatPrompt:
 class TestScoringServiceParseResponse:
     def test_parse_score_response_valid_json(self, scoring_service: ScoringService):
         raw = '{"total_score": 75, "chi_flow": "good", "breakdown": {}, "issues": []}'
-        result = scoring_service._parse_score_response(raw)
+        result = scoring_service._parse_json_with_fallback(raw, context="scoring")
 
         assert isinstance(result, dict)
         assert result["total_score"] == 75
@@ -64,7 +64,7 @@ class TestScoringServiceParseResponse:
 
     def test_parse_score_response_with_surrounding_text(self, scoring_service: ScoringService):
         raw = 'NOT JSON\n{"total_score": 82, "chi_flow": "moderate", "breakdown": {}, "issues": []}\nMORE TEXT'
-        result = scoring_service._parse_score_response(raw)
+        result = scoring_service._parse_json_with_fallback(raw, context="scoring")
 
         assert result["total_score"] == 82
         assert result["chi_flow"] == "moderate"
@@ -72,7 +72,7 @@ class TestScoringServiceParseResponse:
     def test_parse_score_response_invalid_raises_error(self, scoring_service: ScoringService):
         raw = "this is not json at all {{{{"
         with pytest.raises(ValueError):
-            scoring_service._parse_score_response(raw)
+            scoring_service._parse_json_with_fallback(raw, context="scoring")
 
 
 class TestScoringServiceScore:

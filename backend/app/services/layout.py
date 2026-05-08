@@ -8,6 +8,7 @@ from app.services.llm import TextLLMService
 logger = get_logger("layout")
 
 ROOM_LAYOUT_TEMPLATE = load_prompt("RoomLayout.md")
+ELEMENT_NAMING_SCHEME = load_prompt("ElementNamingScheme.md")
 
 _layout_service: "LayoutService | None" = None
 
@@ -17,7 +18,7 @@ class LayoutService(TextLLMService):
         super().__init__(max_tokens=1024)
 
     def _format_layout_prompt(self, extraction_json: str, dimensions: Dimensions) -> str:
-        prompt = ROOM_LAYOUT_TEMPLATE
+        prompt = ROOM_LAYOUT_TEMPLATE + ELEMENT_NAMING_SCHEME
         prompt = prompt.replace("{extraction_json}", extraction_json)
         prompt = prompt.replace("{room_length}", str(dimensions.length))
         prompt = prompt.replace("{room_width}", str(dimensions.width))

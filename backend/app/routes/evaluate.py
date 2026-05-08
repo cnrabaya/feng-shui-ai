@@ -36,7 +36,7 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
             MultiImageData(image=process_image_base64(img.image), direction=img.direction)
             for img in request.images
         ]
-        extractions = await vision_service.extract_elements_batch(processed_images, dimensions=dimensions)
+        extractions = await vision_service.extract_elements_batch(images=processed_images, dimensions=dimensions)
         merged = await merge_service.merge_results(extractions)
 
         if dimensions:

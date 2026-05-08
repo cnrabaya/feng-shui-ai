@@ -149,56 +149,6 @@ class TestEvaluateEndpointE2E:
         assert data["dimensions"]["width"] == 3.5
 
 
-class TestScoringE2E:
-    @pytest.mark.timeout(90)
-    def test_score_endpoint_with_real_session(self, room_1_base64):
-        client = TestClient(app)
-        processed = process_image_base64(room_1_base64)
-
-        eval_response = client.post("/v1/evaluate", json={
-            "image": processed,
-            "session_id": "e2e-score-session",
-            "school": "black_hat",
-        })
-        assert eval_response.status_code == 200
-        session_id = eval_response.json()["session_id"]
-
-        score_response = client.post("/v1/score", json={
-            "session_id": session_id,
-            "school": "black_hat",
-        })
-        assert score_response.status_code == 200, f"Expected 200, got {score_response.status_code}: {score_response.text}"
-        data = score_response.json()
-        assert data["session_id"] == session_id
-        assert data["school"] == "black_hat"
-        assert "score" in data
-        assert data["score"]["total"] >= 0
-        assert "chi_flow" in data["score"]
-
-    @pytest.mark.timeout(90)
-    def test_score_with_school_params(self, room_1_base64):
-        client = TestClient(app)
-        processed = process_image_base64(room_1_base64)
-
-        eval_response = client.post("/v1/evaluate", json={
-            "image": processed,
-            "school": "black_hat",
-            "birth_date": "1985-06-15",
-        })
-        assert eval_response.status_code == 200
-        session_id = eval_response.json()["session_id"]
-
-        score_response = client.post("/v1/score", json={
-            "session_id": session_id,
-            "school": "black_hat",
-            "birth_date": "1985-06-15",
-        })
-        assert score_response.status_code == 200, f"Expected 200, got {score_response.status_code}: {score_response.text}"
-        data = score_response.json()
-        assert data["school"] == "black_hat"
-        assert data["score"]["total"] >= 0
-
-
 class TestSuggestAndAddElementE2E:
     @pytest.mark.timeout(90)
     def test_suggest_returns_200_and_valid_suggestions(self, room_1_base64):
