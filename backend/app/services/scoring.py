@@ -41,7 +41,7 @@ class ScoringService:
 
         dims_str = "not provided"
         if dimensions:
-            dims_str = f"length: {dimensions.length}{dimensions.unit}, width: {dimensions.width}{dimensions.unit}, height: {dimensions.height}{dimensions.unit}"
+            dims_str = f"length: {dimensions.length}{dimensions.unit}, width: {dimensions.width}{dimensions.unit}"
 
         elements_json = json.dumps(elements, indent=2)
 

@@ -2,7 +2,6 @@ from app.models.schemas import (
     Dimensions,
     Element,
     Issue,
-    ScoreBreakdown,
     Score,
     DetectedElement,
     ArchitecturalFeatures,
