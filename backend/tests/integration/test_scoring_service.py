@@ -129,3 +129,62 @@ class TestScoringServiceScore:
             for school in ["black_hat", "form", "compass"]:
                 result = await scoring_service.score(elements=elements, school=school)
                 assert result["total_score"] == 75
+
+    @pytest.mark.anyio(backend="asyncio")
+    async def test_score_retries_on_failure_and_succeeds(self, scoring_service: ScoringService):
+        mock_fail = make_mock_response("server error")
+        mock_success = make_mock_response(MINIMAL_MOCK_RESPONSE)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise Exception("Connection error")
+            return mock_success
+
+        with patch.object(scoring_service.client, "chat",
+            type("MockChat", (), {"completions": type("MockCompletions", (),
+                {"create": mock_create})()})()):
+
+            result = await scoring_service.score(elements=[{"id": "c", "type": "chair"}], school="black_hat")
+
+        assert call_count == 3
+        assert result["total_score"] == 75
+
+    @pytest.mark.anyio(backend="asyncio")
+    async def test_score_retries_on_parse_error_and_succeeds(self, scoring_service: ScoringService):
+        mock_fail = make_mock_response("not valid json {{{")
+        mock_success = make_mock_response(MINIMAL_MOCK_RESPONSE)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return mock_fail
+            return mock_success
+
+        with patch.object(scoring_service.client, "chat",
+            type("MockChat", (), {"completions": type("MockCompletions", (),
+                {"create": mock_create})()})()):
+
+            result = await scoring_service.score(elements=[{"id": "c", "type": "chair"}], school="black_hat")
+
+        assert call_count == 3
+        assert result["total_score"] == 75
+
+    @pytest.mark.parametrize("school", ["black_hat", "form", "three_door", "five_elements", "compass"])
+    @pytest.mark.anyio(backend="asyncio")
+    async def test_score_all_five_schools(self, scoring_service: ScoringService, school: str):
+        mock_response = make_mock_response(MINIMAL_MOCK_RESPONSE)
+
+        with patch.object(scoring_service.client, "chat",
+            type("MockChat", (), {"completions": type("MockCompletions", (),
+                {"create": AsyncMock(return_value=mock_response)})()})()):
+
+            result = await scoring_service.score(elements=[], school=school)
+
+        assert result["total_score"] == 75

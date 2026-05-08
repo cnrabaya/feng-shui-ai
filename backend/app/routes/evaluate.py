@@ -7,6 +7,8 @@ from app.models.schemas import (
     EvaluateResponse,
     MultiImageData,
     RoomGrid,
+    Score,
+    Issue,
 )
 from app.services.vision import vision_service
 from app.services.merge import merge_service
@@ -92,10 +94,19 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
         building_date=request.building_date,
     )
 
+    score_normalized = Score(
+        total=score_result.get("total_score", score_result.get("total", 0)),
+        chi_flow=str(score_result.get("chi_flow", "unknown")),
+        breakdown=score_result.get("breakdown", {}),
+        issues=[Issue(**issue) for issue in score_result.get("issues", [])],
+        overall_assessment=score_result.get("overall_assessment"),
+        school_specific=score_result.get("school_specific"),
+    )
+
     return EvaluateResponse(
         session_id=session_id,
         elements=elements,
-        score=score_result,
+        score=score_normalized,
         room_grid=room_grid,
         dimensions=dimensions,
     )

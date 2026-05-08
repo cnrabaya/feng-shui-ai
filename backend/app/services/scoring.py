@@ -111,15 +111,24 @@ Return ONLY valid JSON matching the output schema specified in the prompt.
         birth_date: Optional[str] = None,
         kua_number: Optional[int] = None,
         building_date: Optional[str] = None,
+        max_retries: int = 3,
     ) -> dict:
         logger.info(f"Scoring room: school={school}, elements={len(elements)}, session={redact_session_id('scoring')}")
 
         prompt = self._format_prompt(school, elements, dimensions, birth_date, kua_number, building_date)
-        raw = await self._call_qwen(prompt)
-        result = self._parse_score_response(raw)
 
-        logger.info(f"Scoring complete: total_score={result.get('total_score', 0)}, chi_flow={result.get('chi_flow', 'unknown')}")
-        return result
+        for attempt in range(max_retries):
+            try:
+                raw = await self._call_qwen(prompt)
+                result = self._parse_score_response(raw)
+                logger.info(f"Scoring complete: total_score={result.get('total_score', 0)}, chi_flow={result.get('chi_flow', 'unknown')}")
+                return result
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Scoring failed after {max_retries} attempts: {type(e).__name__}: {e}")
+                    raise
+                logger.warning(f"Scoring failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}, retrying...")
+                await asyncio.sleep(2 ** attempt)
 
 
 scoring_service = ScoringService()
