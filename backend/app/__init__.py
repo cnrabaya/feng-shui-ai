@@ -1,1 +1,1 @@
-"""Application package for the Olympus backend."""
+"""Application package for the FengShuiAI backend."""

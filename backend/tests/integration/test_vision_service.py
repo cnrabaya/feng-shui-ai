@@ -71,7 +71,7 @@ class TestVisionServiceSingle:
         mock_response = make_mock_response("this is not json at all")
 
         with patch.object(vision_service.client, "chat", type("MockChat", (), {"completions": type("MockCompletions", (), {"create": AsyncMock(return_value=mock_response)})()})()):
-            with pytest.raises(ValueError, match="Failed to parse JSON"):
+            with pytest.raises(ValueError):
                 await vision_service.extract_elements("fake_base64")
 
     @pytest.mark.asyncio

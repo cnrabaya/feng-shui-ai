@@ -14,15 +14,38 @@ Usage:
 import argparse
 import asyncio
 import base64
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from app.models.schemas import MultiImageData
+from app.models.schemas import MultiImageData, Dimensions
 from app.services.vision import VisionService
 from app.services.merge import MergeService
-from app.services.image_processor import process_image_base64
+from app.services.layout import layout_service
+from app.core.utils import process_image_base64
+
+
+def parse_dimensions(value: str) -> Dimensions:
+    match = re.match(r"^([0-9.]+)[xX]([0-9.]+)$", value.strip())
+    if not match:
+        raise ValueError(f"Invalid dimensions format: {value!r}. Expected LxW (e.g. 4.5x3.5)")
+    return Dimensions(length=float(match.group(1)), width=float(match.group(2)))
+
+
+def print_room_grid(room_grid, length: float, width: float):
+    if not room_grid or not room_grid.cells:
+        print("[Layout] No grid generated")
+        return
+    print(f"\n[Layout] Room Grid ({length}m x {width}m) — 4x4 (top-left = north-west)")
+    print("          Col 0    Col 1    Col 2    Col 3")
+    print("       +" + "-------+" * 4)
+    for row in range(4):
+        row_label = "Row {row}".format(row=row)
+        cells = [room_grid.cells.get(f"{row},{col}", "empty") for col in range(4)]
+        print(f"  {row_label}  | " + " | ".join(f"{c:^5}" for c in cells) + " |")
+        print("       +" + "-------+" * 4)
 
 
 def load_image_base64(path: str) -> str:
@@ -141,17 +164,35 @@ async def main():
     parser.add_argument("images", nargs="+", help="Path to image file(s)")
     parser.add_argument("--direction", "-d", action="append", help="Direction per image (north/south/east/west)")
     parser.add_argument("--merge", "-m", action="store_true", help="Merge multiple images")
+    parser.add_argument("--dimensions", "-dim", type=str, help="Room dimensions (e.g. 4.5x3.5)")
 
     args = parser.parse_args()
 
+    dimensions = None
+    if args.dimensions:
+        try:
+            dimensions = parse_dimensions(args.dimensions)
+            print(f"[Args] Dimensions: {dimensions.length}m x {dimensions.width}m")
+        except ValueError as e:
+            print(f"[Error] {e}")
+            sys.exit(1)
+
+    extraction_result = None
     if len(args.images) > 1 and args.merge:
-        await test_merge(args.images, args.direction or ["not_sure"] * len(args.images))
+        extraction_result = await test_merge(args.images, args.direction or ["not_sure"] * len(args.images))
     elif len(args.images) > 1:
         directions = args.direction or ["not_sure"] * len(args.images)
-        await test_batch_images(args.images, directions)
+        extraction_result = await test_batch_images(args.images, directions)
     else:
         direction = args.direction[0] if args.direction else None
-        await test_single_image(args.images[0], direction)
+        extraction_result, _ = await test_single_image(args.images[0], direction)
+
+    if dimensions and extraction_result:
+        grid = await layout_service.generate_grid(
+            extraction_result.model_dump_json(indent=2),
+            dimensions,
+        )
+        print_room_grid(grid, dimensions.length, dimensions.width)
 
     print("\n[Done]")
 

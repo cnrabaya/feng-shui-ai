@@ -6,12 +6,14 @@ from app.models.schemas import (
     EvaluateRequest,
     EvaluateResponse,
     MultiImageData,
+    RoomGrid,
 )
 from app.services.vision import vision_service
 from app.services.merge import merge_service
 from app.services.scoring import scoring_service
+from app.services.layout import layout_service
 from app.services.session import store_extraction_result, store_merged_result
-from app.services.image_processor import process_image_base64
+from app.core.utils import process_image_base64
 
 logger = get_logger("evaluate")
 
@@ -21,6 +23,9 @@ router = APIRouter(tags=["evaluate"])
 @router.post("/evaluate", response_model=EvaluateResponse)
 async def evaluate_room(request: EvaluateRequest, http_request: Request) -> EvaluateResponse:
     session_id = request.session_id or str(uuid.uuid4())
+    dimensions = request.dimensions
+
+    room_grid: RoomGrid | None = None
 
     if request.images:
         image_count = len(request.images)
@@ -29,8 +34,15 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
             MultiImageData(image=process_image_base64(img.image), direction=img.direction)
             for img in request.images
         ]
-        extractions = await vision_service.extract_elements_batch(processed_images)
+        extractions = await vision_service.extract_elements_batch(processed_images, dimensions=dimensions)
         merged = await merge_service.merge_results(extractions)
+
+        if dimensions:
+            logger.debug(f"Generating room grid for session={redact_session_id(session_id)}")
+            grid = await layout_service.generate_grid(merged.model_dump_json(indent=2), dimensions)
+            merged.room_grid = grid
+            room_grid = grid
+
         store_merged_result(session_id, merged, school=request.school, dimensions=request.dimensions)
         elements = [
             {
@@ -42,11 +54,18 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
             }
             for e in merged.confirmed_elements + merged.unconfirmed_elements
         ]
-        logger.info(f"Multi-photo complete: session={redact_session_id(session_id)}, confirmed={len(merged.confirmed_elements)}, unconfirmed={len(merged.unconfirmed_elements)}")
+        logger.info(f"Multi-photo complete: session={redact_session_id(session_id)}, confirmed={len(merged.confirmed_elements)}, unconfirmed={len(merged.unconfirmed_elements)}, grid={'generated' if room_grid else 'skipped'}")
+
     elif request.image:
         logger.info(f"Single-photo evaluate: session={redact_session_id(session_id)}, school={request.school}")
         processed_image = process_image_base64(request.image)
-        extraction = await vision_service.extract_elements(processed_image)
+        extraction = await vision_service.extract_elements(processed_image, dimensions=dimensions)
+
+        if dimensions:
+            logger.debug(f"Generating room grid for session={redact_session_id(session_id)}")
+            grid = await layout_service.generate_grid(extraction.model_dump_json(indent=2), dimensions)
+            room_grid = grid
+
         store_extraction_result(session_id, extraction, school=request.school, dimensions=request.dimensions)
         elements = [
             {
@@ -58,7 +77,8 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
             }
             for e in extraction.elements
         ]
-        logger.info(f"Single-photo complete: session={redact_session_id(session_id)}, elements={len(elements)}")
+        logger.info(f"Single-photo complete: session={redact_session_id(session_id)}, elements={len(elements)}, grid={'generated' if room_grid else 'skipped'}")
+
     else:
         raise HTTPException(status_code=422, detail="Either 'image' or 'images' must be provided")
 
@@ -75,5 +95,7 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
     return EvaluateResponse(
         session_id=session_id,
         elements=elements,
-        score=MOCK_SCORE,
+        score=score_result,
+        room_grid=room_grid,
+        dimensions=dimensions,
     )

@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from app.models.schemas import MultiImageData
-from app.services.image_processor import process_image_base64
+from app.core.utils import process_image_base64
 
 pytestmark = pytest.mark.e2e
 
