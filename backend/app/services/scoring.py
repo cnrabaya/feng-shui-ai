@@ -5,13 +5,10 @@ from typing import Optional, Any
 
 from app.core.config import settings
 from app.core.logger import get_logger, redact_session_id
+from app.core.prompts import load_prompt
 from app.models.schemas import Dimensions
 
-from pathlib import Path
-
 logger = get_logger("scoring")
-
-PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 SCHOOL_PROMPTS = {
     "black_hat": "FengShuiScoring.md",
@@ -22,16 +19,11 @@ SCHOOL_PROMPTS = {
 }
 
 
-def load_prompt(filename: str) -> str:
-    file_path = PROMPTS_DIR / filename
-    return file_path.read_text(encoding="utf-8")
-
-
 class ScoringService:
     def __init__(self):
         self.client = AsyncOpenAI(
-            api_key=settings.qwen_vl_api_key,
-            base_url=settings.vllm_base_url.rsplit("/v1", 1)[0] if "/v1" in settings.vllm_base_url else settings.vllm_base_url,
+            api_key=settings.api_key,
+            base_url=settings.vllm_base_url,
         )
         self.model = settings.model_name
 
