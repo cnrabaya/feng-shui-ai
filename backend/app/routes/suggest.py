@@ -1,6 +1,9 @@
 from fastapi import APIRouter
 
+from app.core.logger import get_logger, redact_session_id
 from app.models.schemas import SuggestRequest, SuggestResponse, Suggestion, Move
+
+logger = get_logger("suggest")
 
 router = APIRouter(tags=["suggest"])
 
@@ -61,4 +64,6 @@ MOCK_SUGGESTIONS = [
 
 @router.post("/suggest", response_model=SuggestResponse)
 async def get_suggestions(request: SuggestRequest) -> SuggestResponse:
+    logger.info(f"Get suggestions: session={redact_session_id(request.session_id)}")
+    logger.info(f"Returning {len(MOCK_SUGGESTIONS)} suggestions for session={redact_session_id(request.session_id)}")
     return SuggestResponse(suggestions=MOCK_SUGGESTIONS)

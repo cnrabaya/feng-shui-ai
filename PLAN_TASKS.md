@@ -148,9 +148,9 @@ Build an AI-powered room Feng Shui evaluator: React/Vite frontend uploads a room
 
 ## Phase 5: Real AI Integration (Future)
 
-### Task 11: Qwen-VL integration
-- [ ] Add `vllm`, `transformers`, `torch` to `pyproject.toml`
-- [ ] Replace `backend/app/services/vision.py` stub with real Qwen-VL call
+### Task 11: Qwen-VL integration via IP Endpoint
+- [ ] Add `openai` Python client to `pyproject.toml`
+- [ ] Replace `backend/app/services/vision.py` stub with Qwen-VL API call via vLLM IP endpoint (e.g., `http://<IP>:8000/v1/chat/completions`)
 - [ ] Implement two-pass prompting (element extraction → scoring)
 - [ ] Implement backend state handling for element augmentation (append to room context and re-evaluate without re-processing image)
 
