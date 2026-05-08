@@ -92,7 +92,7 @@ class EvaluateResponse(BaseModel):
     session_id: str
     elements: list[dict]
     score: Score
-    room_grid: Optional[RoomGrid] = None
+    room_grid: Optional[RoomGrid] = None    
     dimensions: Optional[Dimensions] = None
 
 

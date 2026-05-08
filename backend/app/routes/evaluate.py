@@ -26,7 +26,7 @@ async def evaluate_room(request: EvaluateRequest, http_request: Request) -> Eval
     dimensions = request.dimensions
 
     room_grid: RoomGrid | None = None
-
+    
     if request.images:
         image_count = len(request.images)
         logger.info(f"Multi-photo evaluate: session={redact_session_id(session_id)}, images={image_count}, school={request.school}")
