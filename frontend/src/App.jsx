@@ -14,7 +14,7 @@ import LoadingState   from './components/ui/LoadingState';
 import Button         from './components/ui/Button';
 import Card           from './components/ui/Card';
 
-import ImageUploader  from './components/upload/ImageUploader';
+import MultiImageUploader from './components/upload/MultiImageUploader';
 import DimensionsInput from './components/upload/DimensionsInput';
 import OrientationPicker from './components/upload/OrientationPicker';
 
@@ -31,7 +31,7 @@ const STEP = { UPLOAD: 1, ANALYZING: 2, RESULTS: 3, LAYOUTS: 4 };
 
 export default function App() {
   // ── Image + dimensions state ──
-  const [image, setImage]       = useState(null); // { base64, mediaType }
+  const [photos, setPhotos]     = useState([]); // [{ id, base64, mediaType, orientation, previewUrl }]
   const [dims, setDims]         = useState({ width: 0, height: 0, unit: 'm' });
   const [orientation, setOrientation] = useState(null); // compass direction string e.g. 'N', 'SW'
   const [currentStep, setStep]  = useState(STEP.UPLOAD);
@@ -59,26 +59,22 @@ export default function App() {
   }, [analysis.isLoading]);
 
   // ── Handlers ──
-  const handleImageReady = ({ base64, mediaType }) => setImage({ base64, mediaType });
-
   const handleAnalyze = () => {
     if (USE_MOCK) {
       // Simulate loading delay then inject mock data
       analysis.setMockData(MOCK_ANALYSIS, MOCK_LAYOUTS);
       return;
     }
-    if (!image || !dims.width || !dims.height) return;
+    if (!photos.length || !dims.width || !dims.height) return;
     analysis.runAnalysis({
-      imageBase64:   image.base64,
-      imageMediaType: image.mediaType,
+      photos: photos.map(p => ({ base64: p.base64, mediaType: p.mediaType, orientation: p.orientation })),
       width:  dims.width,
       height: dims.height,
       unit:   dims.unit,
-      orientation,
     });
   };
 
-  const canAnalyze = (USE_MOCK || image) && (USE_MOCK || dims.width > 0) && (USE_MOCK || dims.height > 0) && !analysis.isLoading;
+  const canAnalyze = (USE_MOCK || photos.length > 0) && (USE_MOCK || dims.width > 0) && (USE_MOCK || dims.height > 0) && !analysis.isLoading;
 
   // ── Derived: which step number to show in indicator ──
   const indicatorStep = currentStep;
@@ -101,7 +97,7 @@ export default function App() {
         </div>
         <StepIndicator currentStep={indicatorStep}/>
         {currentStep > STEP.UPLOAD && (
-          <Button variant="ghost" size="sm" onClick={()=>{ analysis.reset(); setStep(STEP.UPLOAD); setImage(null); setOrientation(null); }}>
+          <Button variant="ghost" size="sm" onClick={()=>{ analysis.reset(); setStep(STEP.UPLOAD); setPhotos([]); setOrientation(null); }}>
             ← New Analysis
           </Button>
         )}
@@ -123,7 +119,7 @@ export default function App() {
                   Photograph your room and enter its dimensions. Our AI will evaluate the Feng Shui and suggest optimized layouts.
                 </p>
               </div>
-              <ImageUploader onImageReady={handleImageReady}/>
+              <MultiImageUploader photos={photos} onPhotosChange={setPhotos}/>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-6)' }}>
               <Card>
@@ -157,10 +153,21 @@ export default function App() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'var(--space-8)', alignItems:'start' }}>
             <AnalysisPanel analysis={analysis.analysis}/>
             <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-6)' }}>
-              {image && (
-                <Card style={{ padding:0, overflow:'hidden' }}>
-                  <img src={`data:${image.mediaType};base64,${image.base64}`} alt="Analyzed room"
-                    style={{ width:'100%', maxHeight:300, objectFit:'cover', borderRadius:'var(--radius-lg)' }}/>
+              {photos.length > 0 && (
+                <Card style={{ padding:'var(--space-3)', overflow:'hidden' }}>
+                  <div style={{ display:'flex', gap:'var(--space-2)', overflowX:'auto' }}>
+                    {photos.map((p,i) => (
+                      <div key={p.id} style={{ position:'relative', flexShrink:0 }}>
+                        <img src={p.previewUrl} alt={`Photo ${i+1}`}
+                          style={{ height:120, width:'auto', borderRadius:'var(--radius-md)', objectFit:'cover', display:'block' }}/>
+                        {p.orientation && (
+                          <span style={{ position:'absolute', bottom:4, left:4, background:'rgba(0,0,0,0.7)',
+                            color:'var(--gold-bright)', fontSize:'var(--text-xs)', padding:'1px 6px',
+                            borderRadius:'var(--radius-sm)', fontWeight:600 }}>↑{p.orientation}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </Card>
               )}
               <Button variant="primary" size="lg" fullWidth onClick={()=>setStep(STEP.LAYOUTS)}>
@@ -217,6 +224,7 @@ export default function App() {
                   <RoomCanvas
                     roomWidth={dims.width}
                     roomHeight={dims.height}
+                    roomGrid={analysis.analysis?.roomGrid}
                     furniture={editor.activeLayout.furniture || []}
                     selectedId={editor.selectedFurnitureId}
                     onSelectFurniture={editor.editMode ? editor.selectFurniture : undefined}

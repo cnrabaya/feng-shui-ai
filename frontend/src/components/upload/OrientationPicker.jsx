@@ -46,7 +46,7 @@ function CompassNeedle({ angle }) {
   );
 }
 
-export default function OrientationPicker({ value, onChange }) {
+export default function OrientationPicker({ value, onChange, compact = false }) {
   const [hovered, setHovered] = useState(null);
   const selected = DIRECTIONS.find(d => d.id === value);
 
@@ -56,7 +56,7 @@ export default function OrientationPicker({ value, onChange }) {
 
         {/* Compass SVG */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
-          <svg viewBox="0 0 100 100" width={160} height={160} style={{ display: 'block' }}>
+          <svg viewBox="0 0 100 100" width={compact ? 100 : 160} height={compact ? 100 : 160} style={{ display: 'block' }}>
             {/* Outer ring */}
             <circle cx={50} cy={50} r={46} fill="var(--bg-raised)"
               stroke="var(--border-default)" strokeWidth={1}/>
@@ -135,7 +135,7 @@ export default function OrientationPicker({ value, onChange }) {
         </div>
 
         {/* Right side: description */}
-        <div style={{ flex: 1, paddingTop: 'var(--space-2)' }}>
+        {!compact && <div style={{ flex: 1, paddingTop: 'var(--space-2)' }}>
           <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: 1.7, marginBottom: 'var(--space-4)' }}>
             Which direction were you <strong style={{ color: 'var(--text-primary)' }}>facing</strong> when you took the photo?
           </p>
@@ -174,7 +174,7 @@ export default function OrientationPicker({ value, onChange }) {
               </button>
             ))}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

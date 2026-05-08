@@ -1,115 +1,186 @@
-// RoomCanvas.jsx — 2D SVG room renderer with click-to-move furniture
-import React, { useRef, useCallback } from 'react';
+// ─────────────────────────────────────────────
+// RoomCanvas.jsx
+// Tile-based 2D grid renderer.
+// Only "room" tiles are active — void tiles are transparent,
+// naturally rendering L-shapes, alcoves, and irregular rooms.
+// ─────────────────────────────────────────────
+import React, { useRef, useCallback, useMemo } from 'react';
 import FurnitureItem from './FurnitureItem';
 import { GRID_UNIT } from '../../constants/furnitureTypes';
 
-const GRID_COLOR = 'rgba(212,168,75,0.05)';
-const ROOM_PAD   = 2; // grid units of padding around room
+// Cell type → visual style
+const CELL_STYLES = {
+  room:    { fill: 'var(--bg-overlay)',   stroke: 'rgba(212,168,75,0.07)', opacity: 1 },
+  void:    { fill: 'transparent',         stroke: 'none',                  opacity: 0 },
+  wall:    { fill: '#1a1a2a',             stroke: 'rgba(100,100,150,0.3)', opacity: 1 },
+  door:    { fill: '#2a1a0a',             stroke: 'rgba(212,140,60,0.4)',  opacity: 1 },
+  window:  { fill: '#0a1a2a',             stroke: 'rgba(100,180,220,0.4)', opacity: 1 },
+};
+
+const CELL_ICONS = { door: '▭', window: '▭' };
+const PAD = 2; // grid units padding around the room
+
+// Build a fallback rectangular grid if AI didn't return one
+function buildRectGrid(cols, rows) {
+  return Array.from({ length: rows }, () => Array(cols).fill('room'));
+}
+
+// Validate and normalize the roomGrid from AI
+function normalizeGrid(roomGrid, cols, rows) {
+  if (!Array.isArray(roomGrid) || roomGrid.length === 0) return buildRectGrid(cols, rows);
+  const validTypes = new Set(['room', 'void', 'wall', 'door', 'window']);
+  return Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => {
+      const val = roomGrid[r]?.[c];
+      return validTypes.has(val) ? val : 'room';
+    })
+  );
+}
 
 export default function RoomCanvas({
-  roomWidth, roomHeight,         // in real-world units (m/ft)
+  roomWidth, roomHeight,
+  roomGrid: rawGrid,
   furniture = [],
   selectedId,
   onSelectFurniture,
   onPlaceFurniture,
   editMode = false,
-  scale = 1,
 }) {
   const svgRef = useRef(null);
 
-  // Grid dims: 5 grid units per real-world unit
-  const gridW = Math.round(roomWidth  * 5);
-  const gridH = Math.round(roomHeight * 5);
-  const totalW = (gridW + ROOM_PAD * 2) * GRID_UNIT;
-  const totalH = (gridH + ROOM_PAD * 2) * GRID_UNIT;
-  const roomX  = ROOM_PAD * GRID_UNIT;
-  const roomY  = ROOM_PAD * GRID_UNIT;
-  const roomPxW = gridW * GRID_UNIT;
-  const roomPxH = gridH * GRID_UNIT;
+  const cols = Math.round(roomWidth  * 5);
+  const rows = Math.round(roomHeight * 5);
+  const grid = useMemo(() => normalizeGrid(rawGrid, cols, rows), [rawGrid, cols, rows]);
 
-  // When canvas is clicked while a furniture is selected → move it there
+  const totalW = (cols + PAD * 2) * GRID_UNIT;
+  const totalH = (rows + PAD * 2) * GRID_UNIT;
+  const offsetX = PAD * GRID_UNIT;
+  const offsetY = PAD * GRID_UNIT;
+
+  // Click on canvas → move selected furniture
   const handleCanvasClick = useCallback((e) => {
     if (!editMode || !selectedId || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const svgX  = (e.clientX - rect.left) / scale;
-    const svgY  = (e.clientY - rect.top)  / scale;
-    const gridX = Math.round((svgX - roomX) / GRID_UNIT);
-    const gridY = Math.round((svgY - roomY) / GRID_UNIT);
-    onPlaceFurniture?.(selectedId, Math.max(0, Math.min(gridX, gridW)), Math.max(0, Math.min(gridY, gridH)));
-  }, [editMode, selectedId, roomX, roomY, gridW, gridH, scale, onPlaceFurniture]);
+    const scaleX = totalW / rect.width;
+    const scaleY = totalH / rect.height;
+    const svgX   = (e.clientX - rect.left)  * scaleX;
+    const svgY   = (e.clientY - rect.top)   * scaleY;
+    const gridX  = Math.round((svgX - offsetX) / GRID_UNIT);
+    const gridY  = Math.round((svgY - offsetY) / GRID_UNIT);
+    // Only allow placement on "room" tiles
+    const cellType = grid[gridY]?.[gridX];
+    if (cellType === 'room') {
+      onPlaceFurniture?.(selectedId, Math.max(0, Math.min(gridX, cols - 1)), Math.max(0, Math.min(gridY, rows - 1)));
+    }
+  }, [editMode, selectedId, grid, cols, rows, offsetX, offsetY, totalW, totalH, onPlaceFurniture]);
 
-  // Build grid lines
-  const gridLines = [];
-  for (let gx = 0; gx <= gridW; gx++) {
-    gridLines.push(<line key={`vg${gx}`} x1={roomX+gx*GRID_UNIT} y1={roomY} x2={roomX+gx*GRID_UNIT} y2={roomY+roomPxH} stroke={GRID_COLOR} strokeWidth={0.5}/>);
-  }
-  for (let gy = 0; gy <= gridH; gy++) {
-    gridLines.push(<line key={`hg${gy}`} x1={roomX} y1={roomY+gy*GRID_UNIT} x2={roomX+roomPxW} y2={roomY+gy*GRID_UNIT} stroke={GRID_COLOR} strokeWidth={0.5}/>);
-  }
+  // Compass labels
+  const compass = [
+    { label: 'N', x: offsetX + (cols * GRID_UNIT) / 2, y: offsetY - 12 },
+    { label: 'S', x: offsetX + (cols * GRID_UNIT) / 2, y: offsetY + rows * GRID_UNIT + 16 },
+    { label: 'E', x: offsetX + cols * GRID_UNIT + 16,  y: offsetY + (rows * GRID_UNIT) / 2 },
+    { label: 'W', x: offsetX - 12,                     y: offsetY + (rows * GRID_UNIT) / 2 },
+  ];
 
-  // Compass rose positions (N top, E right, S bottom, W left)
-  const compassItems = [
-    { label:'N', x: roomX+roomPxW/2, y: roomY-12 },
-    { label:'S', x: roomX+roomPxW/2, y: roomY+roomPxH+16 },
-    { label:'E', x: roomX+roomPxW+16, y: roomY+roomPxH/2 },
-    { label:'W', x: roomX-12, y: roomY+roomPxH/2 },
+  // Legend items
+  const legendItems = [
+    { type: 'room',   label: 'Floor' },
+    { type: 'wall',   label: 'Wall'  },
+    { type: 'door',   label: 'Door'  },
+    { type: 'window', label: 'Window'},
   ];
 
   return (
-    <div style={{ overflowAuto:'auto', position:'relative' }}>
-      <svg
-        ref={svgRef}
-        width={totalW * scale}
-        height={totalH * scale}
-        viewBox={`0 0 ${totalW} ${totalH}`}
-        style={{ display:'block', cursor: editMode && selectedId ? 'crosshair' : 'default', maxWidth:'100%' }}
-        onClick={handleCanvasClick}
-      >
-        {/* Background */}
-        <rect width={totalW} height={totalH} fill="var(--bg-raised)"/>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'auto' }}>
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${totalW} ${totalH}`}
+          style={{
+            display: 'block', width: '100%', maxWidth: totalW,
+            cursor: editMode && selectedId ? 'crosshair' : 'default',
+          }}
+          onClick={handleCanvasClick}
+        >
+          {/* SVG background */}
+          <rect width={totalW} height={totalH} fill="var(--bg-raised)"/>
 
-        {/* Room floor */}
-        <rect x={roomX} y={roomY} width={roomPxW} height={roomPxH}
-          fill="var(--bg-overlay)" stroke="var(--border-default)" strokeWidth={1.5} rx={2}/>
+          {/* Render tiles */}
+          {grid.map((row, r) =>
+            row.map((cellType, c) => {
+              const style   = CELL_STYLES[cellType] || CELL_STYLES.room;
+              const px      = offsetX + c * GRID_UNIT;
+              const py      = offsetY + r * GRID_UNIT;
+              const icon    = CELL_ICONS[cellType];
+              return (
+                <g key={`${r}-${c}`} opacity={style.opacity}>
+                  <rect
+                    x={px} y={py} width={GRID_UNIT} height={GRID_UNIT}
+                    fill={style.fill} stroke={style.stroke} strokeWidth={0.5}
+                  />
+                  {icon && GRID_UNIT >= 16 && (
+                    <text x={px + GRID_UNIT / 2} y={py + GRID_UNIT / 2}
+                      textAnchor="middle" dominantBaseline="middle"
+                      style={{ fontSize: 7, fill: style.stroke, pointerEvents: 'none', userSelect: 'none' }}>
+                      {icon}
+                    </text>
+                  )}
+                </g>
+              );
+            })
+          )}
 
-        {/* Grid */}
-        {gridLines}
-
-        {/* Compass */}
-        {compassItems.map(c=>(
-          <text key={c.label} x={c.x} y={c.y} textAnchor="middle" dominantBaseline="middle"
-            style={{fontSize:10,fontFamily:'var(--font-body)',fill:'rgba(212,168,75,0.4)',letterSpacing:'0.05em'}}>
-            {c.label}
-          </text>
-        ))}
-
-        {/* Dimension labels */}
-        <text x={roomX+roomPxW/2} y={roomY+roomPxH+28} textAnchor="middle"
-          style={{fontSize:10,fontFamily:'var(--font-body)',fill:'rgba(212,168,75,0.5)'}}>
-          {roomWidth}
-        </text>
-        <text x={roomX+roomPxW+28} y={roomY+roomPxH/2} textAnchor="middle" dominantBaseline="middle"
-          transform={`rotate(90, ${roomX+roomPxW+28}, ${roomY+roomPxH/2})`}
-          style={{fontSize:10,fontFamily:'var(--font-body)',fill:'rgba(212,168,75,0.5)'}}>
-          {roomHeight}
-        </text>
-
-        {/* Furniture — offset by room position */}
-        <g transform={`translate(${roomX}, ${roomY})`}>
-          {furniture.map(item=>(
-            <FurnitureItem key={item.id} item={item} selected={selectedId===item.id}
-              onClick={onSelectFurniture} editMode={editMode}/>
+          {/* Compass labels */}
+          {compass.map(c => (
+            <text key={c.label} x={c.x} y={c.y} textAnchor="middle" dominantBaseline="middle"
+              style={{ fontSize: 10, fontFamily: 'var(--font-body)', fill: 'rgba(212,168,75,0.4)', letterSpacing: '0.05em' }}>
+              {c.label}
+            </text>
           ))}
-        </g>
 
-        {/* Edit mode hint */}
-        {editMode && selectedId && (
-          <text x={totalW/2} y={totalH-8} textAnchor="middle"
-            style={{fontSize:10,fontFamily:'var(--font-body)',fill:'rgba(212,168,75,0.6)'}}>
-            Click anywhere in the room to place selected item
-          </text>
-        )}
-      </svg>
+          {/* Furniture layer */}
+          <g transform={`translate(${offsetX}, ${offsetY})`}>
+            {furniture.map(item => (
+              <FurnitureItem
+                key={item.id} item={item}
+                selected={selectedId === item.id}
+                onClick={onSelectFurniture}
+                editMode={editMode}
+              />
+            ))}
+          </g>
+
+          {/* Edit hint */}
+          {editMode && selectedId && (
+            <text x={totalW / 2} y={totalH - 8} textAnchor="middle"
+              style={{ fontSize: 10, fontFamily: 'var(--font-body)', fill: 'rgba(212,168,75,0.55)' }}>
+              Click a floor tile to place the selected item
+            </text>
+          )}
+        </svg>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', paddingLeft: 'var(--space-2)' }}>
+        {legendItems.map(({ type, label }) => {
+          const s = CELL_STYLES[type];
+          return (
+            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{
+                width: 12, height: 12, borderRadius: 2,
+                background: s.fill === 'transparent' ? 'transparent' : s.fill,
+                border: `1px solid ${s.stroke === 'none' ? 'var(--border-subtle)' : s.stroke}`,
+              }}/>
+              <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>{label}</span>
+            </div>
+          );
+        })}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
+            {cols} × {rows} grid · 1 cell = 0.2m
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
