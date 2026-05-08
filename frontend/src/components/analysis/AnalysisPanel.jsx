@@ -1,4 +1,4 @@
-// AnalysisPanel.jsx — Container for all analysis results
+// AnalysisPanel.jsx — Score first, then description
 import React from 'react';
 import FengShuiScore from './FengShuiScore';
 import RoomDescription from './RoomDescription';
@@ -13,8 +13,9 @@ export default function AnalysisPanel({ analysis }) {
           Your Space, Evaluated
         </h2>
       </div>
-      <RoomDescription analysis={analysis}/>
+      {/* Score banner comes first — immediately visible */}
       <FengShuiScore fengShuiScore={analysis.fengShuiScore}/>
+      <RoomDescription analysis={analysis}/>
     </div>
   );
 }

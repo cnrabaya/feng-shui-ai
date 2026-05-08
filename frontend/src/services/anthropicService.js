@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────
 // anthropicService.js
-// Single source of truth for all AI API calls.
-// Supports multiple images per analysis call.
+// All Anthropic API calls. Supports:
+//   • analyzeRoom   — multi-image + roomGrid
+//   • generateLayouts — shape-aware layout generation
+//   • reanalyzeLayout — score an edited layout
 // ─────────────────────────────────────────────
-
-const API_URL   = 'https://api.anthropic.com/v1/messages';
-const MODEL     = 'claude-sonnet-4-20250514';
+const API_URL    = 'https://api.anthropic.com/v1/messages';
+const MODEL      = 'claude-sonnet-4-20250514';
 const MAX_TOKENS = 4096;
 
 async function callClaude(messages, systemPrompt) {
@@ -24,122 +25,120 @@ async function callClaude(messages, systemPrompt) {
 
 // ─────────────────────────────────────────────
 // analyzeRoom
-// Accepts an array of photos (each with base64 + orientation)
-// plus room dimensions. Returns full analysis JSON including roomGrid.
-//
 // photos: [{ base64, mediaType, orientation }]
+// Returns full analysis JSON including roomGrid.
 // ─────────────────────────────────────────────
 export async function analyzeRoom({ photos, width, height, unit = 'm' }) {
   const gridW = Math.round(width  * 5);
   const gridH = Math.round(height * 5);
 
   const systemPrompt = `You are an expert interior designer and certified Feng Shui consultant.
-You analyze room photos and return structured JSON only — no markdown, no explanation, no backticks.
-The JSON must match this exact schema:
+Analyze room photos and return structured JSON only — no markdown, no backticks, no explanation.
+Schema:
 {
-  "description": "string — 2-3 sentence natural description of the room",
-  "style": "string — detected interior style",
+  "description": "string",
+  "style": "string",
   "roomShape": "rectangle | L-shape | U-shape | irregular | other",
-  "roomGrid": [
-    ["room"|"void"|"wall"|"door"|"window", ...]
-  ],
-  "existingFurniture": [
-    { "id": "string", "label": "string", "x": number, "y": number, "w": number, "h": number, "rotation": 0 }
-  ],
+  "roomGrid": [["room"|"void"|"wall"|"door"|"window", ...]],
+  "existingFurniture": [{ "id":"string","label":"string","x":number,"y":number,"w":number,"h":number,"rotation":0 }],
   "fengShuiScore": {
-    "total": number (0-100),
+    "total": number,
     "breakdown": {
-      "qi_flow":         { "score": number, "label": "string", "note": "string" },
-      "balance":         { "score": number, "label": "string", "note": "string" },
-      "natural_light":   { "score": number, "label": "string", "note": "string" },
-      "clutter":         { "score": number, "label": "string", "note": "string" },
-      "bagua_alignment": { "score": number, "label": "string", "note": "string" }
+      "qi_flow":         { "score":number, "label":"string", "note":"string" },
+      "balance":         { "score":number, "label":"string", "note":"string" },
+      "natural_light":   { "score":number, "label":"string", "note":"string" },
+      "clutter":         { "score":number, "label":"string", "note":"string" },
+      "bagua_alignment": { "score":number, "label":"string", "note":"string" }
     },
-    "dominant_element": "wood | fire | earth | metal | water",
-    "missing_element":  "wood | fire | earth | metal | water | none",
+    "dominant_element": "wood|fire|earth|metal|water",
+    "missing_element":  "wood|fire|earth|metal|water|none",
     "summary": "string"
   },
   "issues": ["string"],
   "recommendations": ["string"]
 }
+roomGrid must be exactly ${gridH} rows × ${gridW} columns.
+Cell values: "room"=floor, "void"=outside boundary, "wall"=fixed wall, "door"=doorway, "window"=window.`;
 
-CRITICAL roomGrid instructions:
-- roomGrid must be exactly ${gridH} rows × ${gridW} columns (rows first, then columns)
-- Cell values: "room" = walkable floor, "void" = outside the room boundary (for non-rectangular shapes), "wall" = fixed wall segment, "door" = doorway, "window" = window position
-- For rectangular rooms, all cells are "room" except edges where doors/windows exist
-- For L-shaped, U-shaped, or irregular rooms, use "void" for cells that fall outside the actual floor boundary
-- Use information from ALL provided photos to determine the true shape
-- Place doors and windows accurately based on photos and orientations provided`;
-
-  // Build content blocks — one image block per photo with orientation context
   const photoBlocks = photos.flatMap((photo, i) => [
-    {
-      type: 'image',
-      source: { type: 'base64', media_type: photo.mediaType || 'image/jpeg', data: photo.base64 },
-    },
-    {
-      type: 'text',
-      text: `Photo ${i + 1}${photo.orientation ? ` — photographer facing ${photo.orientation}` : ' — orientation unknown'}.`,
-    },
+    { type:'image', source:{ type:'base64', media_type: photo.mediaType||'image/jpeg', data: photo.base64 } },
+    { type:'text',  text:`Photo ${i+1}${photo.orientation ? ` — facing ${photo.orientation}` : ''}.` },
   ]);
 
   const userContent = [
     ...photoBlocks,
-    {
-      type: 'text',
-      text: `Room dimensions: ${width} × ${height} ${unit}.
-Grid size: ${gridW} columns × ${gridH} rows (1 grid unit = 0.2${unit}).
-${photos.length > 1 ? `${photos.length} photos provided from different angles — use all of them to determine the complete room shape, furniture placement, and any irregular features like alcoves or bay windows.` : ''}
-Analyze this room and return only the JSON object.`,
-    },
+    { type:'text', text:`Room: ${width}×${height}${unit}. Grid: ${gridW}×${gridH}. ${photos.length > 1 ? `${photos.length} photos — use all to determine shape.` : ''} Return JSON only.` },
   ];
 
-  const raw     = await callClaude([{ role: 'user', content: userContent }], systemPrompt);
-  const cleaned = raw.replace(/```json|```/g, '').trim();
-  return JSON.parse(cleaned);
+  const raw = await callClaude([{ role:'user', content: userContent }], systemPrompt);
+  return JSON.parse(raw.replace(/```json|```/g,'').trim());
 }
 
 // ─────────────────────────────────────────────
 // generateLayouts
-// Takes analysis (including roomGrid) + dimensions,
-// returns 3 layout alternatives that respect the room shape.
 // ─────────────────────────────────────────────
 export async function generateLayouts({ analysis, width, height, unit = 'm' }) {
   const gridW = Math.round(width  * 5);
   const gridH = Math.round(height * 5);
 
-  const systemPrompt = `You are a Feng Shui interior design expert.
-Generate 3 optimized room layout alternatives as JSON only — no markdown, no explanation.
-Respond ONLY with a valid JSON object matching this schema:
+  const systemPrompt = `You are a Feng Shui interior design expert. Return JSON only — no markdown, no explanation.
+Schema:
 {
-  "layouts": [
-    {
-      "id": "layout_1",
-      "name": "string",
-      "theme": "string",
-      "fengShuiImprovement": number,
-      "dominant_element": "wood | fire | earth | metal | water",
-      "furniture": [
-        { "id": "string", "type": "string", "label": "string",
-          "x": number, "y": number, "w": number, "h": number, "rotation": 0 }
-      ],
-      "rationale": "string"
-    }
-  ]
+  "layouts": [{
+    "id":"layout_1","name":"string","theme":"string",
+    "fengShuiImprovement":number,"dominant_element":"string",
+    "furniture":[{ "id":"string","type":"string","label":"string","x":number,"y":number,"w":number,"h":number,"rotation":0 }],
+    "rationale":"string"
+  }]
 }
-IMPORTANT: Only place furniture on cells that are "room" in the roomGrid. Never place furniture on "void", "wall", "door", or "window" cells.`;
+Only place furniture on "room" cells — never on void, wall, door, or window.`;
 
-  const userText = `Room: ${width} × ${height} ${unit}. Grid: ${gridW}w × ${gridH}h.
-Room shape: ${analysis.roomShape || 'rectangle'}.
-Room grid (${gridH} rows × ${gridW} cols):
-${JSON.stringify(analysis.roomGrid)}
+  const userText = `Room: ${width}×${height}${unit}. Grid: ${gridW}w×${gridH}h. Shape: ${analysis.roomShape||'rectangle'}.
+roomGrid: ${JSON.stringify(analysis.roomGrid)}
+Analysis: ${JSON.stringify({ fengShuiScore: analysis.fengShuiScore, issues: analysis.issues })}
+Generate 3 distinct layouts. JSON only.`;
 
-Current analysis: ${JSON.stringify({ fengShuiScore: analysis.fengShuiScore, issues: analysis.issues }, null, 2)}
+  const raw = await callClaude([{ role:'user', content: userText }], systemPrompt);
+  return JSON.parse(raw.replace(/```json|```/g,'').trim());
+}
 
-Generate 3 distinct Feng Shui layout alternatives. Furniture must only be placed on "room" cells.
-Respond with JSON only.`;
+// ─────────────────────────────────────────────
+// reanalyzeLayout
+// Takes a user-edited layout + the original room data,
+// returns a fresh fengShuiScore for the new arrangement.
+// ─────────────────────────────────────────────
+export async function reanalyzeLayout({ layout, originalAnalysis, width, height, unit = 'm' }) {
+  const systemPrompt = `You are a certified Feng Shui consultant.
+Evaluate the provided room layout and return a JSON fengShuiScore only — no markdown, no explanation.
+Schema:
+{
+  "total": number (0-100),
+  "breakdown": {
+    "qi_flow":         { "score":number, "label":"string", "note":"string" },
+    "balance":         { "score":number, "label":"string", "note":"string" },
+    "natural_light":   { "score":number, "label":"string", "note":"string" },
+    "clutter":         { "score":number, "label":"string", "note":"string" },
+    "bagua_alignment": { "score":number, "label":"string", "note":"string" }
+  },
+  "dominant_element": "wood|fire|earth|metal|water",
+  "missing_element":  "wood|fire|earth|metal|water|none",
+  "summary": "string",
+  "issues": ["string"],
+  "recommendations": ["string"],
+  "delta": number
+}
+"delta" = difference from original score (can be negative).`;
 
-  const raw     = await callClaude([{ role: 'user', content: userText }], systemPrompt);
-  const cleaned = raw.replace(/```json|```/g, '').trim();
-  return JSON.parse(cleaned);
+  const userText = `Original room: ${width}×${height}${unit}.
+Original score: ${originalAnalysis.fengShuiScore?.total}.
+Room shape: ${originalAnalysis.roomShape || 'rectangle'}.
+Room grid: ${JSON.stringify(originalAnalysis.roomGrid)}
+
+Edited layout name: "${layout.name}"
+Furniture positions: ${JSON.stringify(layout.furniture)}
+
+Evaluate this edited arrangement and return the JSON fengShuiScore.`;
+
+  const raw = await callClaude([{ role:'user', content: userText }], systemPrompt);
+  return JSON.parse(raw.replace(/```json|```/g,'').trim());
 }

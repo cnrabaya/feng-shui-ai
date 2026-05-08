@@ -19,6 +19,7 @@ import DimensionsInput from './components/upload/DimensionsInput';
 import OrientationPicker from './components/upload/OrientationPicker';
 
 import AnalysisPanel  from './components/analysis/AnalysisPanel';
+import FengShuiScore  from './components/analysis/FengShuiScore';
 import LayoutAlternatives from './components/layout/LayoutAlternatives';
 import RoomCanvas     from './components/layout/RoomCanvas';
 import LayoutEditor   from './components/layout/LayoutEditor';
@@ -75,6 +76,20 @@ export default function App() {
   };
 
   const canAnalyze = (USE_MOCK || photos.length > 0) && (USE_MOCK || dims.width > 0) && (USE_MOCK || dims.height > 0) && !analysis.isLoading;
+
+  const handleReanalyze = () => {
+    if (!editor.activeLayout) return;
+    if (USE_MOCK) {
+      analysis.setMockReanalysis(editor.activeLayout);
+    } else {
+      analysis.runReanalysis({
+        layout: editor.activeLayout,
+        width: dims.width,
+        height: dims.height,
+        unit: dims.unit,
+      });
+    }
+  };
 
   // ── Derived: which step number to show in indicator ──
   const indicatorStep = currentStep;
@@ -204,6 +219,7 @@ export default function App() {
 
             {/* Canvas area */}
             <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-4)' }}>
+              {/* Header row */}
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div>
                   <p style={{ color:'var(--text-muted)', fontSize:'var(--text-xs)', letterSpacing:'0.12em', textTransform:'uppercase' }}>2D Floor Plan</p>
@@ -212,13 +228,25 @@ export default function App() {
                   </h3>
                 </div>
                 {editor.activeLayout && (
-                  <div style={{ textAlign:'right' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'var(--space-3)' }}>
                     <p style={{ color:'var(--text-muted)', fontSize:'var(--text-xs)' }}>
                       {editor.activeLayout.furniture?.length || 0} pieces
                     </p>
+                    {/* Re-analyze button */}
+                    <Button
+                      variant={analysis.reanalysisResult ? 'ghost' : 'secondary'}
+                      size="sm"
+                      disabled={analysis.isReanalyzing}
+                      onClick={handleReanalyze}
+                      style={{ whiteSpace:'nowrap' }}
+                    >
+                      {analysis.isReanalyzing ? '◎ Scoring…' : '☯ Re-analyze Layout'}
+                    </Button>
                   </div>
                 )}
               </div>
+
+              {/* Canvas */}
               <Card style={{ padding:'var(--space-4)', overflow:'auto' }}>
                 {editor.activeLayout ? (
                   <RoomCanvas
@@ -237,11 +265,69 @@ export default function App() {
                   </div>
                 )}
               </Card>
-              {editor.activeLayout?.rationale && (
+
+              {/* Rationale */}
+              {editor.activeLayout?.rationale && !analysis.reanalysisResult && (
                 <p style={{ color:'var(--text-secondary)', fontSize:'var(--text-sm)', lineHeight:1.7,
                   fontStyle:'italic', paddingLeft:'var(--space-4)', borderLeft:'2px solid var(--border-default)' }}>
                   {editor.activeLayout.rationale}
                 </p>
+              )}
+
+              {/* Re-analysis loading */}
+              {analysis.isReanalyzing && (
+                <Card style={{ textAlign:'center', padding:'var(--space-8)' }}>
+                  <p style={{ color:'var(--gold-bright)', fontFamily:'var(--font-display)', fontSize:'var(--text-lg)' }}>
+                    ◎ Scoring your edited layout…
+                  </p>
+                  <p style={{ color:'var(--text-muted)', fontSize:'var(--text-sm)', marginTop:'var(--space-2)' }}>
+                    Consulting the bagua for your arrangement
+                  </p>
+                </Card>
+              )}
+
+              {/* Re-analysis result */}
+              {analysis.reanalysisResult && !analysis.isReanalyzing && (
+                <div style={{ display:'flex', flexDirection:'column', gap:'var(--space-4)' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                    <p style={{ color:'var(--gold-bright)', fontSize:'var(--text-sm)', fontWeight:600, letterSpacing:'0.05em' }}>
+                      ✓ Edited Layout Score
+                    </p>
+                    <button onClick={analysis.clearReanalysis}
+                      style={{ background:'none', border:'none', cursor:'pointer',
+                        color:'var(--text-muted)', fontSize:'var(--text-xs)', fontFamily:'var(--font-body)' }}>
+                      ✕ dismiss
+                    </button>
+                  </div>
+                  {/* Delta badge */}
+                  <div style={{ display:'flex', alignItems:'center', gap:'var(--space-4)',
+                    background:'var(--bg-raised)', borderRadius:'var(--radius-md)',
+                    padding:'var(--space-3) var(--space-4)', border:'1px solid var(--border-default)' }}>
+                    <div style={{ textAlign:'center', flexShrink:0 }}>
+                      <p style={{
+                        fontFamily:'var(--font-display)', fontSize:40, fontWeight:700, lineHeight:1,
+                        color: analysis.reanalysisResult.total >= 75 ? 'var(--green-qi)'
+                          : analysis.reanalysisResult.total >= 50 ? 'var(--gold-bright)' : 'var(--red-accent)',
+                      }}>{analysis.reanalysisResult.total}</p>
+                      <p style={{ color:'var(--text-muted)', fontSize:'var(--text-xs)' }}>/100</p>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'var(--space-2)', marginBottom:'var(--space-2)' }}>
+                        <span style={{
+                          color: analysis.reanalysisResult.delta >= 0 ? 'var(--green-qi)' : 'var(--red-accent)',
+                          fontSize:'var(--text-sm)', fontWeight:700,
+                        }}>
+                          {analysis.reanalysisResult.delta >= 0 ? '+' : ''}{analysis.reanalysisResult.delta} pts
+                        </span>
+                        <span style={{ color:'var(--text-muted)', fontSize:'var(--text-xs)' }}>vs original</span>
+                      </div>
+                      <p style={{ color:'var(--text-secondary)', fontSize:'var(--text-sm)', lineHeight:1.6 }}>
+                        {analysis.reanalysisResult.summary}
+                      </p>
+                    </div>
+                  </div>
+                  <FengShuiScore fengShuiScore={analysis.reanalysisResult}/>
+                </div>
               )}
             </div>
           </div>
